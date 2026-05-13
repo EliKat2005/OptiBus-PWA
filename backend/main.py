@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import engine, Base, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast
+from geoalchemy2.types import Geography
 import models
 import asyncio
 import json
@@ -126,6 +127,40 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
         "type": "FeatureCollection",
         "features": features
     }
+
+@app.get("/api/stops/nearby")
+async def get_nearby_stops(lat: float, lon: float, radius_meters: float = 500.0, db: AsyncSession = Depends(get_db)):
+    """Encuentra paradas cercanas a una coordenada usando ST_DWithin."""
+    point = f"SRID=4326;POINT({lon} {lat})"
+    
+    query = select(
+        models.Stop.id,
+        models.Stop.name,
+        func.ST_AsGeoJSON(models.Stop.geom).label('geojson'),
+        func.ST_DistanceSphere(
+            models.Stop.geom, 
+            func.ST_GeomFromText(point, 4326)
+        ).label('distance') 
+    ).where(
+        func.ST_DWithin(
+            cast(models.Stop.geom, Geography),
+            cast(func.ST_GeomFromText(point, 4326), Geography),
+            radius_meters
+        )
+    ).order_by('distance')
+    
+    result = await db.execute(query)
+    
+    stops = []
+    for row in result:
+        stops.append({
+            "id": row.id,
+            "name": row.name,
+            "distance": round(row.distance, 2),
+            "geometry": json.loads(row.geojson)
+        })
+        
+    return {"radius_meters": radius_meters, "nearby_stops": stops}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

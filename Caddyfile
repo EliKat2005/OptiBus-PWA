@@ -1,0 +1,19 @@
+:8080 {
+    # 1. Servir el Frontend estático PWA
+    root * /srv/frontend
+    file_server
+
+    # 2. Redirigir peticiones API al backend de FastAPI
+    handle /health {
+        reverse_proxy api:8000
+    }
+    
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+
+    # 3. Redirigir WebSockets
+    handle /ws {
+        reverse_proxy api:8000
+    }
+}

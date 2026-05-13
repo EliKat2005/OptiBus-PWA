@@ -12,22 +12,29 @@ services:
       - db_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    # Para rootless es recomendable comentar o ajustar el usuario según tu UID.
-    # user: "1000:1000"               # Descomenta si tienes problemas de permisos
 
   api:
     build: ./backend
     container_name: optibus_api
     environment:
       DATABASE_URL: postgresql://optibus:optibus123@db:5432/optibus
-    ports:
-      - "8000:8000"
     depends_on:
       - db
     volumes:
       - ./backend:/app:Z
     working_dir: /app
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  web:
+    image: docker.io/library/caddy:2.7-alpine
+    container_name: optibus_web
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:z
+      - ./frontend:/srv/frontend:z
+    depends_on:
+      - api
 
 volumes:
   db_data:

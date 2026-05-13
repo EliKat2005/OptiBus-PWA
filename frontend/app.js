@@ -2,11 +2,12 @@
 const IBARRA_LAT = 0.3517;
 const IBARRA_LON = -78.1223;
 
-// Cambia 'localhost' por la IP de tu PC en la red local si pruebas desde el celular
-//const API_URL = 'http://localhost:8000';
-//const WS_URL = 'ws://localhost:8000/ws';
-const API_URL = 'http://192.168.1.100:8000';
-const WS_URL = 'ws://192.168.1.100:8000/ws';
+// Ahora usamos rutas relativas gracias a nuestro proxy reverso (Caddy)
+const API_URL = '';
+// Determinamos dinámicamente si es ws:// o wss:// basándonos en la URL actual
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS_URL = `${wsProtocol}//${window.location.host}/ws`;
+
 // 1. Inicializar mapa de Leaflet
 const map = L.map('map').setView([IBARRA_LAT, IBARRA_LON], 14);
 
@@ -76,4 +77,62 @@ function connectWebSocket() {
 document.addEventListener('DOMContentLoaded', () => {
     loadRoutes();
     connectWebSocket();
+    
+    // Configurar botón GPS
+    document.getElementById('btn-gps').addEventListener('click', findNearbyStops);
 });
+
+// 5. Función de Geofence y UX
+async function findNearbyStops() {
+    if (!navigator.geolocation) {
+        alert("Tu navegador no soporta geolocalización");
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        const userLat = position.coords.latitude;
+        const userLon = position.coords.longitude;
+        
+        // Centrar mapa en el usuario
+        map.setView([userLat, userLon], 16);
+        
+        // Colocar icono del usuario
+        L.marker([userLat, userLon], {
+            icon: L.icon({
+                iconUrl: 'https://cdn-icons-png.flaticon.com/512/149/149059.png',
+                iconSize: [30, 30]
+            })
+        }).addTo(map).bindPopup("<b>¡Estás aquí!</b>").openPopup();
+
+        // Llamada al backend para preguntar al PostGIS por el radio de 500m
+        try {
+            const response = await fetch(`${API_URL}/api/stops/nearby?lat=${userLat}&lon=${userLon}&radius_meters=700`);
+            const data = await response.json();
+            
+            if(data.nearby_stops.length === 0) {
+                alert("No hay paradas a menos de 700 metros de tu ubicación.");
+                return;
+            }
+
+            // Pintar paradas cercanas de verde
+            data.nearby_stops.forEach(stop => {
+                const stopLat = stop.geometry.coordinates[1];
+                const stopLon = stop.geometry.coordinates[0];
+                
+                L.circleMarker([stopLat, stopLon], {
+                    radius: 8,
+                    fillColor: "#10b981",
+                    color: "#047857",
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).addTo(map).bindPopup(`<b>🚏 ${stop.name}</b><br> A ${stop.distance} metros de ti.`);
+            });
+        } catch(error) {
+            console.error("Error obteniendo paradas:", error);
+        }
+        
+    }, (error) => {
+        alert("Por favor, permite el acceso al GPS para buscar tus paradas.");
+    });
+}
