@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from database import engine, Base, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -172,3 +173,31 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+# --- FASE B: Endpoint de Recepción GPS (Móvil / IoT) ---
+
+class GPSPayload(BaseModel):
+    bus_id: str
+    lat: float
+    lon: float
+
+@app.post("/api/gps/update")
+async def receive_gps(payload: GPSPayload):
+    """Recibe la posición real de un bus/conductor y la retransmite al instante por WebSocket."""
+    # Preparamos el mensaje en el mismo formato que usa el simulador
+    ws_message = json.dumps({
+        "type": "bus_positions",
+        "buses": [
+            {
+                "id": payload.bus_id,
+                "lat": payload.lat,
+                "lon": payload.lon,
+                "source": "real"  # Ayuda en el front a distinguirlo
+            }
+        ]
+    })
+    
+    # Broadcast a todos los usuarios conectados (pasajeros viendo el mapa)
+    await manager.broadcast(ws_message)
+    
+    return {"status": "success", "message": f"Posición de {payload.bus_id} retransmitida."}

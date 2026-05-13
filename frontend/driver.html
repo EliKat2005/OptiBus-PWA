@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OptiBus - Modo Conductor</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#10b981">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: #f1f5f9;
+            color: #334155;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-padding: 2rem;
+            padding-top: 10vh;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+        h1 { color: #0f172a; margin-bottom: 0.5rem; }
+        .status {
+            font-size: 1.25rem;
+            font-weight: bold;
+            margin: 1.5rem 0;
+            color: #64748b;
+        }
+        .active { color: #10b981; }
+        button {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1.25rem;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.2s;
+        }
+        button.stop {
+            background-color: #ef4444;
+        }
+        #log {
+            margin-top: 1rem;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #64748b;
+            text-align: left;
+            max-height: 100px;
+            overflow-y: auto;
+            background: #f8fafc;
+            padding: 0.5rem;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚍 Tablero de Conductor</h1>
+        <p>ID de Unidad: <strong>BUS-REAL-01</strong></p>
+        
+        <div class="status" id="status-text">OFFLINE</div>
+        
+        <button id="btn-toggle">Iniciar Transmisión</button>
+        
+        <div id="log"></div>
+    </div>
+    
+    <script src="driver.js"></script>
+</body>
+</html>
