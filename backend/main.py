@@ -201,3 +201,33 @@ async def receive_gps(payload: GPSPayload):
     await manager.broadcast(ws_message)
     
     return {"status": "success", "message": f"Posición de {payload.bus_id} retransmitida."}
+
+# --- FASE B.2: Endpoint para App Nativa de Flotas FOSS (OwnTracks) ---
+@app.post("/api/gps/owntracks")
+async def receive_owntracks(payload: dict):
+    """
+    Recibe un webhook nativo en segundo plano desde la aplicación libre 'OwnTracks'
+    ideal para que los conductores minimicen la app sin perder la ubicación.
+    """
+    # Verificamos que sea un evento de tipo 'ubicación'
+    if payload.get("_type") == "location":
+        lat = payload.get("lat")
+        lon = payload.get("lon")
+        # OwnTracks usa 'tid' (Tracker ID) de 2 letras, lo mapeamos al nombre del bus
+        tracker_id = payload.get("tid", "BUS")
+        bus_id = f"BUS-{tracker_id.upper()}"
+        
+        ws_message = json.dumps({
+            "type": "bus_positions",
+            "buses": [{
+                "id": bus_id,
+                "lat": lat,
+                "lon": lon,
+                "source": "owntracks_native"
+            }]
+        })
+        
+        await manager.broadcast(ws_message)
+        return {"status": "success"}
+    
+    return {"status": "ignored", "reason": "Not a location payload"}
