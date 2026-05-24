@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+
+# Docker / Bases de Datos
+db_data/
+
+# OS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# Entorno
+.env
