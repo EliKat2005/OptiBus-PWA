@@ -1,0 +1,36 @@
+# Usa una imagen oficial de Ubuntu o Debian como base
+FROM docker.io/library/ubuntu:22.04
+
+# Variables de entorno para Android SDK
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH=${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools:${ANDROID_SDK_ROOT}/build-tools/34.0.0
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalar dependencias necesarias (Java 17, wget, unzip, git)
+RUN apt-get update && apt-get install -y \
+    openjdk-17-jdk \
+    wget \
+    unzip \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Descargar e instalar Android Command Line Tools (DevSecOps: usar sumas de verificación en pipeline idealmente)
+RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-10406996_latest.zip -O android_tools.zip && \
+    unzip -q android_tools.zip -d ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    mv ${ANDROID_SDK_ROOT}/cmdline-tools/cmdline-tools ${ANDROID_SDK_ROOT}/cmdline-tools/latest && \
+    rm android_tools.zip
+
+# Aceptar licencias e instalar Build Tools y Platform
+RUN yes | sdkmanager --licenses > /dev/null && \
+    sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+# Crear usuario sin privilegios para realizar el build
+RUN useradd -m -s /bin/bash builder
+WORKDIR /workspace
+RUN chown -R builder:builder /workspace
+
+USER builder
+
+# El comando por defecto ejecutará Gradle para generar el APK
+CMD ["./gradlew", "assembleRelease", "--no-daemon"]

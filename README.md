@@ -43,14 +43,16 @@ docker exec -it optibus_api python ingest_stops.py data/paradas_ejemplo.json
 
 Una vez levantado todo y habiendo inyectado los datos, puedes acceder a:
 - **Mapa y Usuario Central:** [http://localhost:8080](http://localhost:8080)
-- **Panel del Conductor:** [http://localhost:8080/driver.html](http://localhost:8080/driver.html)
 - **Documentación API (Swagger/OpenAPI):** [http://localhost:8000/docs](http://localhost:8000/docs)
+
+*(Nota: La aplicación del conductor se encuentra en desarrollo activo en el repositorio `mobile-driver/`)*
 
 ## Estructura del Repositorio
 
 - `backend/`: Código de FastAPI, conexión a DB espacial y modelos de base de datos.
 - `backend/data/`: Archivos semilla (.json y .gpx) de ejemplo para la ingesta de datos base.
-- `frontend/`: Código fuente de las interfaces de usuario.
+- `frontend/`: Código fuente de las interfaces de usuario web (Pasajeros).
+- `mobile-driver/`: Código nativo (Kotlin) para la app de los conductores (En desarrollo).
 - `Caddyfile`: Configuración del servidor proxy Caddy.
 - `compose.yaml`: Declaración de la infraestructura dockerizada.
 
