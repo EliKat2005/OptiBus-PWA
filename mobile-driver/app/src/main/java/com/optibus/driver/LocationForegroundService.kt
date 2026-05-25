@@ -1,6 +1,7 @@
 package com.optibus.driver
 
 import android.annotation.SuppressLint
+import android.content.pm.ServiceInfo
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -50,27 +51,40 @@ class LocationForegroundService : Service(), LocationListener {
         }
 
         // Especificado con Location en Android 14+
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
         return START_STICKY
     }
 
-    @SuppressLint("MissingPermission") // Los permisos ya se pidieron en MainActivity
+    @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
-        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        
-        locationManager.requestLocationUpdates(
-            LocationManager.GPS_PROVIDER,
-            currentInterval,
-            5f,
-            this
-        )
+        try {
+            locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            locationManager.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER,
+                currentInterval,
+                5f,
+                this
+            )
+        } catch (e: SecurityException) {
+            Log.e("OptiBus", "Fallo al solicitar ubicación: Permiso denegado.", e)
+        } catch (e: IllegalArgumentException) {
+            Log.e("OptiBus", "Fallo al solicitar ubicación: GPS Provider no encontrado.", e)
+        }
     }
 
     private fun initWebSocket() {
         val client = OkHttpClient()
         // DevSecOps: En producción DEBE ser wss:// (WebSocket Secure).
         // Cambia la IP por tu dominio de producción, ej: "wss://optibus.tu-dominio.com/ws"
-        val request = Request.Builder().url("wss://optibus.tu-dominio.com/ws").build()
+        val request = Request.Builder().url("wss://192.168.1.12:8000/ws").build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d("OptiBus", "WebSocket Conectado")
@@ -129,7 +143,7 @@ class LocationForegroundService : Service(), LocationListener {
     }
 
     override fun onDestroy() {
-        super.onCreate()
+        super.onDestroy()
         locationManager.removeUpdates(this)
         webSocket.close(1000, "Servicio finalizado")
     }

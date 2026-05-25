@@ -1,50 +1,46 @@
 package com.optibus.driver
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Button
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
+import android.os.Build
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : Activity() {
 
     private val PERMISSION_REQUEST_CODE = 1001
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Por simplicidad en este MVP, creamos el layout por código
-        val button = Button(this).apply {
-            text = "INICIAR TRANSMISIÓN DE RUTA"
-            textSize = 20f
-            setOnClickListener {
-                if (checkPermissions()) {
-                    startLocationService()
-                } else {
-                    requestPermissions()
-                }
+        setContentView(R.layout.activity_main)
+
+        val btnStart = findViewById<Button>(R.id.btnStart)
+        btnStart.setOnClickListener {
+            if (checkPermissions()) {
+                startLocationService()
+            } else {
+                requestPermissions()
             }
         }
-        setContentView(button)
     }
 
     private fun checkPermissions(): Boolean {
-        val fineLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val fineLocation = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         return fineLocation
     }
 
     private fun requestPermissions() {
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ),
-            PERMISSION_REQUEST_CODE
+        val permissions = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        requestPermissions(permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
     }
 
     override fun onRequestPermissionsResult(
@@ -60,7 +56,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun startLocationService() {
         val serviceIntent = Intent(this, LocationForegroundService::class.java)
-        ContextCompat.startForegroundService(this, serviceIntent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
         Toast.makeText(this, "Transmisión en segundo plano iniciada", Toast.LENGTH_SHORT).show()
     }
 }
