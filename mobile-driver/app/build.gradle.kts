@@ -15,12 +15,22 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../optibus-release-key.jks")
+            storePassword = "optibus-f-droid"
+            keyAlias = "optibus"
+            keyPassword = "optibus-f-droid"
+        }
+    }
+
     buildTypes {
         release {
             // DevSecOps: Habilitar ofuscación de código para evitar ingeniería inversa
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

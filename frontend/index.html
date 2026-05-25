@@ -9,6 +9,12 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2563eb">
     
+    <!-- iOS PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="OptiBus">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -16,6 +22,11 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Indicador de estado de conexión -->
+    <div id="connection-status" class="connection-lost">
+        <span id="connection-text">🔴 Sin conexión</span>
+    </div>
+
     <!-- Botón flotante para GPS -->
     <button id="btn-gps" title="Encontrar mi parada cercana">
         📍
@@ -28,5 +39,16 @@
     
     <!-- Lógica de la App -->
     <script src="app.js"></script>
+
+    <!-- Registrar Service Worker para funcionalidad PWA offline -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('✅ Service Worker registrado:', reg.scope))
+                    .catch(err => console.error('❌ Error registrando SW:', err));
+            });
+        }
+    </script>
 </body>
 </html>

@@ -2,9 +2,7 @@
 const IBARRA_LAT = 0.3517;
 const IBARRA_LON = -78.1223;
 
-// Ahora usamos rutas relativas gracias a nuestro proxy reverso (Caddy)
 const API_URL = '';
-// Determinamos dinámicamente si es ws:// o wss:// basándonos en la URL actual
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const WS_URL = `${wsProtocol}//${window.location.host}/ws`;
 
@@ -17,10 +15,32 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap - OptiBus MVP'
 }).addTo(map);
 
-// Objeto para llevar el control de los iconos de los buses en el mapa
+// Objeto para control de marcadores
 const busMarkers = {};
 
-// 3. Función HTTP (REST) para cargar y dibujar las rutas desde PostGIS
+// Referencia al indicador de conexión
+const connectionStatusEl = document.getElementById('connection-status');
+const connectionTextEl = document.getElementById('connection-text');
+
+function updateConnectionStatus(connected) {
+    if (!connectionStatusEl || !connectionTextEl) return;
+    if (connected) {
+        connectionStatusEl.className = 'connected';
+        connectionTextEl.textContent = '🟢 Conectado';
+    } else {
+        connectionStatusEl.className = 'connection-lost';
+        connectionTextEl.textContent = '🔴 Sin conexión';
+    }
+    // Ocultar automáticamente tras 3 segundos si está conectado
+    if (connected) {
+        setTimeout(() => {
+            connectionStatusEl.style.opacity = '0';
+        }, 3000);
+        connectionStatusEl.style.opacity = '1';
+    }
+}
+
+// 3. Cargar rutas
 async function loadRoutes() {
     try {
         const response = await fetch(`${API_URL}/api/routes`);
@@ -32,7 +52,6 @@ async function loadRoutes() {
             }
         }).addTo(map);
         
-        // Auto-centrar el mapa basándose en la caja delimitadora de la ruta trazada
         if (geojsonData.features.length > 0) {
             map.fitBounds(routeLayer.getBounds());
         }
@@ -41,62 +60,83 @@ async function loadRoutes() {
     }
 }
 
-// 4. Función en Tiempo Real (WebSockets) para mover los marcadores
+// 4. WebSocket con reconexión exponencial
+let wsReconnectDelay = 1000;
+const MAX_RECONNECT_DELAY = 30000;
+
 function connectWebSocket() {
     const ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
-        console.log("🟢 Conexión WebSocket establecida con el Cerebro OptiBus.");
+        console.log("🟢 WebSocket conectado");
+        updateConnectionStatus(true);
+        wsReconnectDelay = 1000; // Resetear backoff
     };
 
     ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        if (data.type === "bus_positions") {
-            data.buses.forEach(bus => {
-                // Si el autobús ya está en el mapa, animar a la nueva posición
-                if (busMarkers[bus.id]) {
-                    busMarkers[bus.id].setLatLng([bus.lat, bus.lon]);
-                } else {
-                    // Si es nuevo, creamos el marcador en el mapa
-                    const marker = L.marker([bus.lat, bus.lon]).addTo(map);
-                    marker.bindPopup(`<b>🚌 Unidad:</b> ${bus.id}`);
-                    busMarkers[bus.id] = marker;
-                }
-            });
+        try {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === "bus_positions") {
+                data.buses.forEach(bus => {
+                    if (busMarkers[bus.id]) {
+                        busMarkers[bus.id].setLatLng([bus.lat, bus.lon]);
+                    } else {
+                        const marker = L.marker([bus.lat, bus.lon]).addTo(map);
+                        const sourceLabel = bus.source === 'real' ? '📡 Real' : '';
+                        marker.bindPopup(`<b>🚌 Unidad:</b> ${bus.id}<br>${sourceLabel}`);
+                        busMarkers[bus.id] = marker;
+                    }
+                });
+            }
+        } catch (err) {
+            console.error('Error procesando mensaje WS:', err);
         }
     };
 
-    ws.onclose = () => {
-        console.log("🔴 WebSocket desconectado. Intentando reconectar en 3 segundos...");
-        setTimeout(connectWebSocket, 3000);
+    ws.onclose = (event) => {
+        console.log(`🔴 WebSocket desconectado (código ${event.code}). Reconectando en ${wsReconnectDelay/1000}s...`);
+        updateConnectionStatus(false);
+        
+        // Backoff exponencial con cota máxima
+        setTimeout(connectWebSocket, wsReconnectDelay);
+        wsReconnectDelay = Math.min(wsReconnectDelay * 2, MAX_RECONNECT_DELAY);
+    };
+
+    ws.onerror = (error) => {
+        console.error('Error en WebSocket:', error);
+        // El onclose se disparará después, no hacemos nada extra aquí
     };
 }
 
-// Inicializar ciclo de vida de la aplicación frontend
+// Inicializar al cargar el DOM
 document.addEventListener('DOMContentLoaded', () => {
     loadRoutes();
     connectWebSocket();
     
     // Configurar botón GPS
-    document.getElementById('btn-gps').addEventListener('click', findNearbyStops);
+    const gpsBtn = document.getElementById('btn-gps');
+    if (gpsBtn) {
+        gpsBtn.addEventListener('click', findNearbyStops);
+    }
 });
 
-// 5. Función de Geofence y UX
+// 5. Función de búsqueda de paradas cercanas
 async function findNearbyStops() {
     if (!navigator.geolocation) {
         alert("Tu navegador no soporta geolocalización");
         return;
     }
 
+    const gpsBtn = document.getElementById('btn-gps');
+    if (gpsBtn) gpsBtn.classList.add('searching');
+
     navigator.geolocation.getCurrentPosition(async (position) => {
         const userLat = position.coords.latitude;
         const userLon = position.coords.longitude;
         
-        // Centrar mapa en el usuario
         map.setView([userLat, userLon], 16);
         
-        // Colocar icono del usuario
         L.marker([userLat, userLon], {
             icon: L.icon({
                 iconUrl: 'https://cdn-icons-png.flaticon.com/512/149/149059.png',
@@ -104,7 +144,6 @@ async function findNearbyStops() {
             })
         }).addTo(map).bindPopup("<b>¡Estás aquí!</b>").openPopup();
 
-        // Llamada al backend para preguntar al PostGIS por el radio de 500m
         try {
             const response = await fetch(`${API_URL}/api/stops/nearby?lat=${userLat}&lon=${userLon}&radius_meters=700`);
             const data = await response.json();
@@ -114,7 +153,6 @@ async function findNearbyStops() {
                 return;
             }
 
-            // Pintar paradas cercanas de verde
             data.nearby_stops.forEach(stop => {
                 const stopLat = stop.geometry.coordinates[1];
                 const stopLon = stop.geometry.coordinates[0];
@@ -130,9 +168,23 @@ async function findNearbyStops() {
             });
         } catch(error) {
             console.error("Error obteniendo paradas:", error);
+            alert("Error al buscar paradas. ¿Estás conectado a internet?");
+        } finally {
+            if (gpsBtn) gpsBtn.classList.remove('searching');
         }
         
     }, (error) => {
-        alert("Por favor, permite el acceso al GPS para buscar tus paradas.");
+        if (gpsBtn) gpsBtn.classList.remove('searching');
+        if (error.code === 1) {
+            alert("Por favor, permite el acceso al GPS desde los ajustes de tu navegador.");
+        } else if (error.code === 2) {
+            alert("No se pudo obtener tu ubicación. Verifica tu conexión.");
+        } else {
+            alert("Tu dispositivo tardó demasiado en obtener la ubicación.");
+        }
+    }, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 60000
     });
 }

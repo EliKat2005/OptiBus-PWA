@@ -19,4 +19,4 @@ db_data/
 *.swp
 
 # Entorno
-.env
+.env*.jks
