@@ -1,0 +1,24 @@
+# ==== Ignorar en contexto Docker ====
+.git/
+.gitignore
+.dockerignore
+docs/
+scripts/
+README.md
+compose.yaml
+mobile-driver/
+.vscode/
+
+# ==== Python ====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# ==== Secretos ====
+.env*
+*.jks
+*.keystore
+*.pem
+*.key

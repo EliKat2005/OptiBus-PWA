@@ -47,4 +47,22 @@ if __name__ == "__main__":
     gpx_path = sys.argv[1]
     name = sys.argv[2]
     
-    asyncio.run(ingest_gpx(gpx_path, name))
+    # DevSecOps: Validar sanitización del nombre de ruta y del archivo
+    if not os.path.isfile(gpx_path):
+        print(f"Error: El archivo '{gpx_path}' no existe o no es accesible.")
+        sys.exit(1)
+    
+    # Validar extensión .gpx
+    if not gpx_path.lower().endswith('.gpx'):
+        print("Advertencia: El archivo no tiene extensión .gpx. ¿Estás seguro de que es un GPX válido?")
+    
+    # Sanitizar nombre de ruta: solo permitir caracteres seguros
+    import re
+    safe_name = re.sub(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ _\-]', '', name).strip()
+    if not safe_name:
+        print("Error: El nombre de la ruta contiene caracteres no permitidos o está vacío.")
+        sys.exit(1)
+    if safe_name != name:
+        print(f"Nombre sanitizado: '{name}' -> '{safe_name}'")
+    
+    asyncio.run(ingest_gpx(gpx_path, safe_name))

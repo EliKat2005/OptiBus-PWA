@@ -2,12 +2,12 @@ FROM docker.io/library/python:3.13-slim-bookworm
 
 # Herramientas de compilación para psycopg2 y creación de usuario no root (DevSecOps)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev && \
+    build-essential libpq-dev curl && \
     rm -rf /var/lib/apt/lists/* && \
     useradd -m -s /bin/bash appuser
 
-# Instala uv en la versión exacta que usas en el host (dentro del contenedor)
-RUN pip install --no-cache-dir uv==0.11.14
+# Instala uv (última versión estable, sin hardcodear versión)
+RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
@@ -19,5 +19,9 @@ RUN chown -R appuser:appuser /app
 
 # DevSecOps: Ejecutar como usuario sin privilegios root
 USER appuser
+
+# Healthcheck para el contenedor (DevSecOps: detección temprana de fallos)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

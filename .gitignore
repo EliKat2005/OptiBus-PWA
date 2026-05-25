@@ -1,4 +1,11 @@
-# Python
+# ==== OS & IDEs ====
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.suo
+
+# ==== Python & Backend ====
 __pycache__/
 *.py[cod]
 *$py.class
@@ -7,16 +14,26 @@ __pycache__/
 venv/
 env/
 
-# Docker / Bases de Datos
+# ==== Docker / Podman ====
 db_data/
 
-# OS
-.DS_Store
+# ==== Android / Mobile Driver ====
+mobile-driver/.gradle/
+mobile-driver/app/build/
+mobile-driver/build/
+mobile-driver/local.properties
+mobile-driver/.idea/
+mobile-driver/**/*.iml
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-
-# Entorno
-.env*.jks
+# ==== DevSecOps: Secretos, Entornos y Certificados ====
+# NUNCA subir estos archivos al control de versiones
+.env
+.env.*
+*.jks
+*.keystore
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+config/credentials.*

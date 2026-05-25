@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, field_validator
 from contextlib import asynccontextmanager
 from database import engine, Base, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,8 +10,40 @@ from geoalchemy2.types import Geography
 import models
 import asyncio
 import json
+import logging
+import os
+import time
+from collections import defaultdict
 
-# Manejador de conexiones WebSocket
+# --- Logging estructurado ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
+logger = logging.getLogger("optibus-api")
+
+# --- Rate Limiter simple (DevSecOps: anti-abuso) ---
+class RateLimiter:
+    def __init__(self, max_requests: int = 30, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.clients: dict[str, list[float]] = defaultdict(list)
+
+    def is_allowed(self, client_ip: str) -> bool:
+        now = time.time()
+        # Limpiar timestamps antiguos
+        self.clients[client_ip] = [
+            ts for ts in self.clients[client_ip]
+            if now - ts < self.window_seconds
+        ]
+        if len(self.clients[client_ip]) >= self.max_requests:
+            return False
+        self.clients[client_ip].append(now)
+        return True
+
+rate_limiter = RateLimiter(max_requests=30, window_seconds=60)
+
+# Manejador de conexiones WebSocket con logging
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -18,50 +51,57 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        logger.info(f"WebSocket conectado. Conexiones activas: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket):
         self.active_connections.remove(websocket)
+        logger.info(f"WebSocket desconectado. Conexiones activas: {len(self.active_connections)}")
 
     async def broadcast(self, message: str):
+        disconnected = []
         for connection in self.active_connections:
             try:
                 await connection.send_text(message)
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Error enviando broadcast a WS: {e}")
+                disconnected.append(connection)
+        # Limpiar conexiones fallidas
+        for conn in disconnected:
+            if conn in self.active_connections:
+                self.active_connections.remove(conn)
 
 manager = ConnectionManager()
 
-# Background task para simular buses
+# --- Background task para simular buses ---
 async def bus_simulator():
     """Simula el movimiento de buses siguiendo las rutas de PostGIS."""
-    # Retraso inicial para dejar que la BD y app levanten bien
     await asyncio.sleep(5)
     
-    # Extraer las coordenadas de la ruta 1 para simulación
     async with engine.begin() as conn:
-        # Obtenemos la ruta en formato GeoJSON para procesarla
         result = await conn.execute(
             select(func.ST_AsGeoJSON(models.Route.geom)).where(models.Route.id == 1)
         )
         row = result.scalar()
         
     if not row:
-        print("No hay rutas para simular.")
+        logger.warning("No hay rutas para simular.")
         return
         
     geojson = json.loads(row)
-    # geojson['coordinates'] es una lista de [lon, lat]
     coordinates = geojson.get("coordinates", [])
     
-    # Simularemos 2 buses en posiciones distintas de la lista
+    if not coordinates:
+        logger.warning("Ruta vacía, no se puede simular.")
+        return
+    
     bus1_idx = 0
     bus2_idx = len(coordinates) // 2
     
+    logger.info(f"Simulador iniciado con {len(coordinates)} puntos de ruta.")
+    
     while True:
         if manager.active_connections:
-            # Bus 1
             lon1, lat1 = coordinates[bus1_idx]
-            # Bus 2
             lon2, lat2 = coordinates[bus2_idx]
             
             payload = json.dumps({
@@ -77,37 +117,57 @@ async def bus_simulator():
             bus1_idx = (bus1_idx + 1) % len(coordinates)
             bus2_idx = (bus2_idx + 1) % len(coordinates)
             
-        await asyncio.sleep(3) # Emitir cada 3 segundos
+        await asyncio.sleep(3)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Al iniciar la aplicación, creamos las tablas en la BD (incluyendo columnas espaciales)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
-    # Lanzar la tarea de simulación en segundo plano
-    task = asyncio.create_task(bus_simulator())
+    task = None
+    if os.getenv("ENABLE_BUS_SIMULATOR", "false").lower() == "true":
+        task = asyncio.create_task(bus_simulator())
+        logger.info("Simulador de buses HABILITADO.")
+    else:
+        logger.info("Simulador de buses DESHABILITADO (variable ENABLE_BUS_SIMULATOR=false).")
+    
     yield
-    task.cancel()
+    if task:
+        task.cancel()
 
-app = FastAPI(title="OptiBus MVP", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="OptiBus MVP", version="0.2.0", lifespan=lifespan)
 
-# Configurar CORS para que el PWA (Frontend) pueda comunicarse
+# DevSecOps: CORS restrictivo (no usar "*" en producción)
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],  # Solo métodos necesarios
     allow_headers=["*"],
 )
 
+# --- Middleware de Rate Limiting ---
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    client_ip = request.client.host if request.client else "unknown"
+    if not rate_limiter.is_allowed(client_ip):
+        logger.warning(f"Rate limit excedido para IP: {client_ip}")
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Demasiadas solicitudes. Intente de nuevo más tarde."}
+        )
+    response = await call_next(request)
+    return response
+
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "service": "optibus-api"}
+    return {"status": "ok", "service": "optibus-api", "version": "0.2.0"}
 
 @app.get("/api/routes")
 async def get_routes(db: AsyncSession = Depends(get_db)):
     """Devuelve las rutas almacenadas en formato GeoJSON FeatureCollection para Leaflet."""
+    logger.info("GET /api/routes solicitado")
     result = await db.execute(
         select(models.Route.id, models.Route.name, func.ST_AsGeoJSON(models.Route.geom).label('geojson'))
     )
@@ -130,8 +190,27 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
     }
 
 @app.get("/api/stops/nearby")
-async def get_nearby_stops(lat: float, lon: float, radius_meters: float = 500.0, db: AsyncSession = Depends(get_db)):
+async def get_nearby_stops(
+    lat: float,
+    lon: float,
+    radius_meters: float = 500.0,
+    db: AsyncSession = Depends(get_db)
+):
     """Encuentra paradas cercanas a una coordenada usando ST_DWithin."""
+    # DevSecOps: Validar rangos de coordenadas
+    if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Coordenadas inválidas. lat debe estar entre -90 y 90, lon entre -180 y 180."}
+        )
+    if radius_meters > 10000:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Radio máximo permitido: 10000 metros."}
+        )
+    
+    logger.info(f"GET /api/stops/nearby lat={lat} lon={lon} radius={radius_meters}")
+    
     point = f"SRID=4326;POINT({lon} {lat})"
     
     query = select(
@@ -169,9 +248,13 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Mantener la conexión abierta escuchando posibles pings
-            await websocket.receive_text()
+            # Mantener la conexión abierta con timeout
+            await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+    except asyncio.TimeoutError:
+        logger.info("WebSocket timeout (ping no recibido)")
     except WebSocketDisconnect:
+        pass
+    finally:
         manager.disconnect(websocket)
 
 # --- FASE B: Endpoint de Recepción GPS (Móvil / IoT) ---
@@ -181,10 +264,25 @@ class GPSPayload(BaseModel):
     lat: float
     lon: float
 
+    @field_validator('lat')
+    @classmethod
+    def validate_lat(cls, v: float) -> float:
+        if not -90 <= v <= 90:
+            raise ValueError('Latitud debe estar entre -90 y 90')
+        return v
+
+    @field_validator('lon')
+    @classmethod
+    def validate_lon(cls, v: float) -> float:
+        if not -180 <= v <= 180:
+            raise ValueError('Longitud debe estar entre -180 y 180')
+        return v
+
 @app.post("/api/gps/update")
-async def receive_gps(payload: GPSPayload):
+async def receive_gps(payload: GPSPayload, request: Request):
     """Recibe la posición real de un bus/conductor y la retransmite al instante por WebSocket."""
-    # Preparamos el mensaje en el mismo formato que usa el simulador
+    logger.info(f"GPS Update recibido de {payload.bus_id}: ({payload.lat}, {payload.lon}) desde {request.client.host}")
+    
     ws_message = json.dumps({
         "type": "bus_positions",
         "buses": [
@@ -192,30 +290,35 @@ async def receive_gps(payload: GPSPayload):
                 "id": payload.bus_id,
                 "lat": payload.lat,
                 "lon": payload.lon,
-                "source": "real"  # Ayuda en el front a distinguirlo
+                "source": "real"
             }
         ]
     })
     
-    # Broadcast a todos los usuarios conectados (pasajeros viendo el mapa)
     await manager.broadcast(ws_message)
     
     return {"status": "success", "message": f"Posición de {payload.bus_id} retransmitida."}
 
 # --- FASE B.2: Endpoint para App Nativa de Flotas FOSS (OwnTracks) ---
 @app.post("/api/gps/owntracks")
-async def receive_owntracks(payload: dict):
+async def receive_owntracks(payload: dict, request: Request):
     """
-    Recibe un webhook nativo en segundo plano desde la aplicación libre 'OwnTracks'
-    ideal para que los conductores minimicen la app sin perder la ubicación.
+    Recibe un webhook nativo en segundo plano desde la aplicación libre 'OwnTracks'.
     """
-    # Verificamos que sea un evento de tipo 'ubicación'
     if payload.get("_type") == "location":
         lat = payload.get("lat")
         lon = payload.get("lon")
-        # OwnTracks usa 'tid' (Tracker ID) de 2 letras, lo mapeamos al nombre del bus
+        
+        # DevSecOps: Validar coordenadas recibidas
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+            return {"status": "error", "reason": "Coordenadas inválidas"}
+        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+            return {"status": "error", "reason": "Coordenadas fuera de rango"}
+        
         tracker_id = payload.get("tid", "BUS")
         bus_id = f"BUS-{tracker_id.upper()}"
+        
+        logger.info(f"OwnTracks recibido de {bus_id}: ({lat}, {lon})")
         
         ws_message = json.dumps({
             "type": "bus_positions",

@@ -17,6 +17,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 // Objeto para control de marcadores
 const busMarkers = {};
+const MAX_BUS_MARKERS = 50; // Límite de seguridad para prevenir DoS
 
 // Referencia al indicador de conexión
 const connectionStatusEl = document.getElementById('connection-status');
@@ -44,6 +45,9 @@ function updateConnectionStatus(connected) {
 async function loadRoutes() {
     try {
         const response = await fetch(`${API_URL}/api/routes`);
+        if (!response.ok) {
+            throw new Error(`Error HTTP: ${response.status}`);
+        }
         const geojsonData = await response.json();
         
         const routeLayer = L.geoJSON(geojsonData, {
@@ -52,7 +56,7 @@ async function loadRoutes() {
             }
         }).addTo(map);
         
-        if (geojsonData.features.length > 0) {
+        if (geojsonData.features && geojsonData.features.length > 0) {
             map.fitBounds(routeLayer.getBounds());
         }
     } catch (error) {
@@ -63,9 +67,16 @@ async function loadRoutes() {
 // 4. WebSocket con reconexión exponencial
 let wsReconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 30000;
+let wsInstance = null;
 
 function connectWebSocket() {
+    // Cerrar instancia anterior si existe
+    if (wsInstance && wsInstance.readyState !== WebSocket.CLOSED) {
+        wsInstance.close();
+    }
+    
     const ws = new WebSocket(WS_URL);
+    wsInstance = ws;
 
     ws.onopen = () => {
         console.log("🟢 WebSocket conectado");
@@ -77,14 +88,26 @@ function connectWebSocket() {
         try {
             const data = JSON.parse(event.data);
             
-            if (data.type === "bus_positions") {
+            if (data.type === "bus_positions" && Array.isArray(data.buses)) {
                 data.buses.forEach(bus => {
+                    // DevSecOps: Validar coordenadas antes de usar
+                    if (typeof bus.lat !== 'number' || typeof bus.lon !== 'number' ||
+                        bus.lat < -90 || bus.lat > 90 || bus.lon < -180 || bus.lon > 180) {
+                        console.warn('Coordenadas inválidas recibidas:', bus);
+                        return;
+                    }
+                    
                     if (busMarkers[bus.id]) {
                         busMarkers[bus.id].setLatLng([bus.lat, bus.lon]);
                     } else {
+                        // Limitar número de marcadores para prevenir DoS
+                        if (Object.keys(busMarkers).length >= MAX_BUS_MARKERS) {
+                            console.warn('Límite de marcadores alcanzado');
+                            return;
+                        }
                         const marker = L.marker([bus.lat, bus.lon]).addTo(map);
                         const sourceLabel = bus.source === 'real' ? '📡 Real' : '';
-                        marker.bindPopup(`<b>🚌 Unidad:</b> ${bus.id}<br>${sourceLabel}`);
+                        marker.bindPopup(`<b>🚌 Unidad:</b> ${escapeHtml(bus.id)}<br>${escapeHtml(sourceLabel)}`);
                         busMarkers[bus.id] = marker;
                     }
                 });
@@ -107,6 +130,13 @@ function connectWebSocket() {
         console.error('Error en WebSocket:', error);
         // El onclose se disparará después, no hacemos nada extra aquí
     };
+}
+
+// DevSecOps: Escapar HTML para prevenir XSS en popups
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
 }
 
 // Inicializar al cargar el DOM
@@ -135,6 +165,14 @@ async function findNearbyStops() {
         const userLat = position.coords.latitude;
         const userLon = position.coords.longitude;
         
+        // DevSecOps: Validar coordenadas del GPS
+        if (!isFinite(userLat) || !isFinite(userLon) || 
+            userLat < -90 || userLat > 90 || userLon < -180 || userLon > 180) {
+            alert("Coordenadas GPS inválidas recibidas de tu dispositivo.");
+            if (gpsBtn) gpsBtn.classList.remove('searching');
+            return;
+        }
+        
         map.setView([userLat, userLon], 16);
         
         L.marker([userLat, userLon], {
@@ -145,17 +183,34 @@ async function findNearbyStops() {
         }).addTo(map).bindPopup("<b>¡Estás aquí!</b>").openPopup();
 
         try {
-            const response = await fetch(`${API_URL}/api/stops/nearby?lat=${userLat}&lon=${userLon}&radius_meters=700`);
+            // Codificar parámetros para prevenir inyección
+            const params = new URLSearchParams({
+                lat: userLat.toString(),
+                lon: userLon.toString(),
+                radius_meters: '700'
+            });
+            const response = await fetch(`${API_URL}/api/stops/nearby?${params}`);
+            
+            if (!response.ok) {
+                throw new Error(`Error HTTP: ${response.status}`);
+            }
+            
             const data = await response.json();
             
-            if(data.nearby_stops.length === 0) {
+            if(!data.nearby_stops || data.nearby_stops.length === 0) {
                 alert("No hay paradas a menos de 700 metros de tu ubicación.");
                 return;
             }
 
             data.nearby_stops.forEach(stop => {
+                if (!stop.geometry || !Array.isArray(stop.geometry.coordinates)) {
+                    console.warn('Datos de parada inválidos:', stop);
+                    return;
+                }
                 const stopLat = stop.geometry.coordinates[1];
                 const stopLon = stop.geometry.coordinates[0];
+                
+                if (!isFinite(stopLat) || !isFinite(stopLon)) return;
                 
                 L.circleMarker([stopLat, stopLon], {
                     radius: 8,
@@ -164,7 +219,7 @@ async function findNearbyStops() {
                     weight: 2,
                     opacity: 1,
                     fillOpacity: 0.8
-                }).addTo(map).bindPopup(`<b>🚏 ${stop.name}</b><br> A ${stop.distance} metros de ti.`);
+                }).addTo(map).bindPopup(`<b>🚏 ${escapeHtml(stop.name)}</b><br> A ${stop.distance} metros de ti.`);
             });
         } catch(error) {
             console.error("Error obteniendo paradas:", error);
