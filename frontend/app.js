@@ -25,19 +25,21 @@ const connectionTextEl = document.getElementById('connection-text');
 
 function updateConnectionStatus(connected) {
     if (!connectionStatusEl || !connectionTextEl) return;
+    
+    // Asegurar que el mensaje siempre se haga visible al cambiar de estado
+    connectionStatusEl.style.opacity = '1';
+
     if (connected) {
         connectionStatusEl.className = 'connected';
         connectionTextEl.textContent = '🟢 Conectado';
-    } else {
-        connectionStatusEl.className = 'connection-lost';
-        connectionTextEl.textContent = '🔴 Sin conexión';
-    }
-    // Ocultar automáticamente tras 3 segundos si está conectado
-    if (connected) {
+        
+        // Ocultar automáticamente tras 3 segundos si está conectado
         setTimeout(() => {
             connectionStatusEl.style.opacity = '0';
         }, 3000);
-        connectionStatusEl.style.opacity = '1';
+    } else {
+        connectionStatusEl.className = 'connection-lost';
+        connectionTextEl.textContent = '🔴 Sin conexión';
     }
 }
 
@@ -68,11 +70,17 @@ async function loadRoutes() {
 let wsReconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 let wsInstance = null;
+let pingTimer = null;
 
 function connectWebSocket() {
     // Cerrar instancia anterior si existe
     if (wsInstance && wsInstance.readyState !== WebSocket.CLOSED) {
         wsInstance.close();
+    }
+    
+    if (pingTimer) {
+        clearInterval(pingTimer);
+        pingTimer = null;
     }
     
     const ws = new WebSocket(WS_URL);
@@ -82,6 +90,13 @@ function connectWebSocket() {
         console.log("🟢 WebSocket conectado");
         updateConnectionStatus(true);
         wsReconnectDelay = 1000; // Resetear backoff
+        
+        // Ping cada 30 segundos para mantener viva la conexión
+        pingTimer = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "ping" }));
+            }
+        }, 30000);
     };
 
     ws.onmessage = (event) => {
@@ -118,6 +133,10 @@ function connectWebSocket() {
     };
 
     ws.onclose = (event) => {
+        if (pingTimer) {
+            clearInterval(pingTimer);
+            pingTimer = null;
+        }
         console.log(`🔴 WebSocket desconectado (código ${event.code}). Reconectando en ${wsReconnectDelay/1000}s...`);
         updateConnectionStatus(false);
         
@@ -148,6 +167,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const gpsBtn = document.getElementById('btn-gps');
     if (gpsBtn) {
         gpsBtn.addEventListener('click', findNearbyStops);
+    }
+    
+    // Configurar botón de Refresh / Purga de Caché
+    const refreshBtn = document.getElementById('btn-refresh');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async () => {
+            if ('caches' in window) {
+                try {
+                    const cacheNames = await caches.keys();
+                    await Promise.all(cacheNames.map(name => caches.delete(name)));
+                    console.log("Cachés borrados.");
+                } catch (err) {
+                    console.error("Error borrando caché:", err);
+                }
+            }
+            // Forzar recarga desde el servidor
+            window.location.reload();
+        });
     }
 });
 

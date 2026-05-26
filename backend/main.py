@@ -244,16 +244,28 @@ async def get_nearby_stops(
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """Endpoint WebSocket para que el frontend reciba posiciones en tiempo real."""
+    """Endpoint WebSocket para que frontend y apps driver compartan posiciones en tiempo real."""
     await manager.connect(websocket)
     try:
         while True:
-            # Mantener la conexión abierta con timeout
-            await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            # Esperar mensajes (posiciones del conductor) y hacer broadcast general
+            text = await asyncio.wait_for(websocket.receive_text(), timeout=120.0)
+            try:
+                data = json.loads(text)
+                # Si recibimos datos válidos de un bus, lo verificamos y reenviamos
+                if data.get("type") == "bus_positions":
+                    # Se inyecta "source":"real" para distinguir en Frontend
+                    for bus in data.get("buses", []):
+                        bus["source"] = "real"
+                    await manager.broadcast(json.dumps(data))
+            except json.JSONDecodeError:
+                logger.warning(f"JSON inválido recibido en WS: {text}")
     except asyncio.TimeoutError:
         logger.info("WebSocket timeout (ping no recibido)")
     except WebSocketDisconnect:
         pass
+    except Exception as e:
+        logger.error(f"WebSocket error inésperado: {e}")
     finally:
         manager.disconnect(websocket)
 

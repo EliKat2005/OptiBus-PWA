@@ -7,7 +7,7 @@
         X-XSS-Protection "1; mode=block"
         Referrer-Policy "no-referrer-when-downgrade"
         # Política de Seguridad de Contenido (CSP) para prevenir XSS y data injection
-        Content-Security-Policy "default-src 'self'; script-src 'self' https://unpkg.com 'unsafe-inline'; style-src 'self' https://unpkg.com 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org https://cdn-icons-png.flaticon.com https://cdn.iconscout.com; connect-src 'self' ws: wss:; font-src 'self';"
+        Content-Security-Policy "default-src 'self'; script-src 'self' https://unpkg.com 'unsafe-inline'; style-src 'self' https://unpkg.com 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org https://cdn-icons-png.flaticon.com https://cdn.iconscout.com https://unpkg.com; connect-src 'self' ws: wss:; font-src 'self';"
         # Ocultar versión del servidor
         -Server
     }

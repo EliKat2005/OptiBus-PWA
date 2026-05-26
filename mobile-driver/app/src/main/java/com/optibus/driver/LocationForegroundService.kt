@@ -23,29 +23,32 @@ class LocationForegroundService : Service(), LocationListener {
     private val CHANNEL_ID = "OptiBusLocationChannel"
     private val NOTIFICATION_ID = 1
     private lateinit var locationManager: LocationManager
-    private lateinit var webSocket: WebSocket
+    private var webSocket: WebSocket? = null
     // Optimización: Intervalo inicial a 3 segundos
     private var currentInterval: Long = 3000L
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        initWebSocket()
         startLocationUpdates()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val serverIp = intent?.getStringExtra("SERVER_IP") ?: "192.168.1.12:8000"
+        // Reiniciamos websocket si cambia / arranca
+        initWebSocket(serverIp)
+
         val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("OptiBus Conductor")
-                .setContentText("Transmitiendo ubicación en tiempo real...")
+                .setContentText("Transmitiendo a $serverIp")
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .build()
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
                 .setContentTitle("OptiBus Conductor")
-                .setContentText("Transmitiendo...")
+                .setContentText("Transmitiendo... ($serverIp)")
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .build()
         }
@@ -70,9 +73,14 @@ class LocationForegroundService : Service(), LocationListener {
             locationManager.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,
                 currentInterval,
-                5f,
+                0f, // 0 metros para asegurar que actualice aunque estés quieto en el asiento
                 this
             )
+            
+            // Forzar un primer envío inmediato con la última ubicación conocida
+            locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let {
+                onLocationChanged(it)
+            }
         } catch (e: SecurityException) {
             Log.e("OptiBus", "Fallo al solicitar ubicación: Permiso denegado.", e)
         } catch (e: IllegalArgumentException) {
@@ -80,17 +88,25 @@ class LocationForegroundService : Service(), LocationListener {
         }
     }
 
-    private fun initWebSocket() {
+    private fun initWebSocket(serverIp: String) {
+        // Cerrar previo si existe
+        webSocket?.close(1000, "Reconectando")
+        
         val client = OkHttpClient()
-        // DevSecOps: En producción DEBE ser wss:// (WebSocket Secure).
-        // Cambia la IP por tu dominio de producción, ej: "wss://optibus.tu-dominio.com/ws"
-        val request = Request.Builder().url("wss://192.168.1.12:8000/ws").build()
+        // DevSecOps: Permitir conexión dinámica. Validar si omitieron ws://
+        val url = if (serverIp.startsWith("ws://") || serverIp.startsWith("wss://")) {
+            "$serverIp/ws"
+        } else {
+            "ws://$serverIp/ws"
+        }
+        
+        val request = Request.Builder().url(url).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d("OptiBus", "WebSocket Conectado")
+                Log.d("OptiBus", "WebSocket Conectado a $url")
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e("OptiBus", "Fallo WebSocket", t)
+                Log.e("OptiBus", "Fallo WebSocket en $url", t)
             }
         })
     }
@@ -125,8 +141,8 @@ class LocationForegroundService : Service(), LocationListener {
         busesArray.put(busData)
         json.put("buses", busesArray)
 
-        // Enviar la coordenada al backend
-        webSocket.send(json.toString())
+        // Enviar la coordenada al backend si el WS está instanciado
+        webSocket?.send(json.toString())
         Log.d("OptiBus", "Enviada coord: ${location.latitude}, ${location.longitude}")
     }
 
@@ -145,7 +161,7 @@ class LocationForegroundService : Service(), LocationListener {
     override fun onDestroy() {
         super.onDestroy()
         locationManager.removeUpdates(this)
-        webSocket.close(1000, "Servicio finalizado")
+        webSocket?.close(1000, "Servicio finalizado")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
