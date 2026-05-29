@@ -1,6 +1,6 @@
-// OptiBus Service Worker - Estrategia Cache First con Network Fallback
-// DevSecOps: Cache versionado automáticamente con timestamp
-const CACHE_VERSION = 'v1.1.' + Date.now();
+// OptiBus Service Worker - Estrategia Cache First solo para assets propios
+// CORRECCIÓN: Versionado estático (sin Date.now()) para evitar regeneración infinita
+const CACHE_VERSION = 'v2.0.0';
 const CACHE_NAME = `optibus-pwa-${CACHE_VERSION}`;
 const ASSETS_TO_CACHE = [
   '/',
@@ -10,6 +10,18 @@ const ASSETS_TO_CACHE = [
   '/manifest.json',
   '/icons/icon-192.png'
 ];
+
+// Dominios externos que NUNCA deben cachearse (tiles, CDNs, etc.)
+const EXTERNAL_DOMAINS = [
+  'unpkg.com',
+  'tile.openstreetmap.org',
+  'cdn-icons-png.flaticon.com',
+  'cdn.iconscout.com'
+];
+
+function isExternalRequest(url) {
+  return EXTERNAL_DOMAINS.some(domain => url.hostname.includes(domain));
+}
 
 // Evento de instalación: precachear assets estáticos con manejo de errores individual
 self.addEventListener('install', (event) => {
@@ -26,23 +38,17 @@ self.addEventListener('install', (event) => {
       );
     })
   );
-  // Activar inmediatamente sin esperar a que se cierren pestañas viejas
   self.skipWaiting();
 });
 
-// Evento de activación: limpiar caches viejos (hasta 3 versiones anteriores)
+// Evento de activación: limpiar caches viejos
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activando Service Worker...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
-      // Mantener solo el cache actual y los 2 anteriores
-      const validCaches = cacheNames
-        .filter(name => name.startsWith('optibus-pwa-'))
-        .sort()
-        .reverse();
-      
-      const cachesToDelete = validCaches.slice(3); // Eliminar más allá de 3 versiones
-      
+      const cachesToDelete = cacheNames.filter(name => 
+        name.startsWith('optibus-pwa-') && name !== CACHE_NAME
+      );
       return Promise.all(
         cachesToDelete.map(cacheName => {
           console.log(`[SW] Eliminando cache viejo: ${cacheName}`);
@@ -51,17 +57,24 @@ self.addEventListener('activate', (event) => {
       );
     })
   );
-  // Tomar control inmediato de todos los clientes
   self.clients.claim();
 });
 
-// Estrategia: Stale-While-Revalidate para la API (datos frescos cuando sea posible)
-// Cache First para assets estáticos
+// CORRECCIÓN: Interceptar fetch con estrategia selectiva:
+// - Assets propios: Cache First con Network fallback
+// - API: Network First con Cache fallback  
+// - Tiles/CDN externos: SOLO Network (sin cachear, sin interceptar errores)
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
   // No interceptar WebSockets
   if (url.protocol === 'ws:' || url.protocol === 'wss:') {
+    return;
+  }
+  
+  // CORRECCIÓN: Recursos externos (tiles, CDN) -> pasar directo, no cachear
+  if (isExternalRequest(url)) {
+    // No interceptamos: el navegador maneja la petición normalmente
     return;
   }
   
@@ -71,16 +84,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
-  // Para assets estáticos y navegación: Cache First, Network fallback
-  event.respondWith(cacheFirstWithNetwork(event.request));
+  // Para assets propios y navegación: Cache First, Network fallback
+  event.respondWith(cacheFirstWithNetworkFallback(event.request));
 });
 
 // Estrategia Network First: intentar red, si falla usar cache
 async function networkFirstWithCache(request) {
   try {
     const networkResponse = await fetch(request);
-    // Cachear la respuesta fresca para uso offline futuro
-    if (networkResponse.ok) {
+    if (networkResponse && networkResponse.ok) {
       const cache = await caches.open(CACHE_NAME);
       cache.put(request, networkResponse.clone());
     }
@@ -89,7 +101,6 @@ async function networkFirstWithCache(request) {
     console.log('[SW] Sin red, buscando en cache:', request.url);
     const cached = await caches.match(request);
     if (cached) return cached;
-    // Último recurso: devolver JSON de error
     return new Response(JSON.stringify({ error: 'offline' }), {
       status: 503,
       headers: { 'Content-Type': 'application/json' }
@@ -97,13 +108,14 @@ async function networkFirstWithCache(request) {
   }
 }
 
-// Estrategia Cache First: intentar cache, si no existe ir a red
-async function cacheFirstWithNetwork(request) {
+// CORRECCIÓN: Cache First para assets propios EXCLUSIVAMENTE.
+// Si no está en caché y falla la red, devolver respuesta vacía en lugar de lanzar error
+async function cacheFirstWithNetworkFallback(request) {
   const cached = await caches.match(request);
   if (cached) {
-    // Actualizar en segundo plano (stale-while-revalidate)
+    // Revalidar en segundo plano
     fetch(request).then(response => {
-      if (response.ok) {
+      if (response && response.ok) {
         caches.open(CACHE_NAME).then(cache => {
           cache.put(request, response);
         });
@@ -114,19 +126,21 @@ async function cacheFirstWithNetwork(request) {
   
   try {
     const networkResponse = await fetch(request);
-    if (networkResponse.ok) {
+    if (networkResponse && networkResponse.ok) {
       const cache = await caches.open(CACHE_NAME);
       cache.put(request, networkResponse.clone());
     }
     return networkResponse;
   } catch (error) {
-    // Para navegación HTML, devolver página offline
+    // Si es navegación HTML, devolver página offline
     if (request.mode === 'navigate') {
       return new Response(
         '<html><body style="font-family:sans-serif;text-align:center;padding-top:20vh;"><h1>🚌 Sin conexión</h1><p>OptiBus necesita internet para funcionar.</p><p>Recarga cuando tengas señal.</p></body></html>',
         { headers: { 'Content-Type': 'text/html' } }
       );
     }
-    throw error;
+    // CORRECCIÓN: Devolver respuesta vacía en vez de lanzar error
+    // Esto evita que Leaflet y otros componentes fallen catastróficamente
+    return new Response('', { status: 200, headers: { 'Content-Type': 'text/plain' } });
   }
 }

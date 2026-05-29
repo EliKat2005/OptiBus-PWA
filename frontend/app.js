@@ -23,23 +23,38 @@ const MAX_BUS_MARKERS = 50; // Límite de seguridad para prevenir DoS
 const connectionStatusEl = document.getElementById('connection-status');
 const connectionTextEl = document.getElementById('connection-text');
 
+// Timer para ocultar gradualmente el indicador de estado
+let connectionHideTimer = null;
+
 function updateConnectionStatus(connected) {
     if (!connectionStatusEl || !connectionTextEl) return;
     
-    // Asegurar que el mensaje siempre se haga visible al cambiar de estado
+    // Cancelar cualquier timer previo para evitar conflictos
+    if (connectionHideTimer) {
+        clearTimeout(connectionHideTimer);
+        connectionHideTimer = null;
+    }
+    
     connectionStatusEl.style.opacity = '1';
 
     if (connected) {
         connectionStatusEl.className = 'connected';
         connectionTextEl.textContent = '🟢 Conectado';
         
-        // Ocultar automáticamente tras 3 segundos si está conectado
-        setTimeout(() => {
+        // Ocultar automáticamente tras 3 segundos
+        connectionHideTimer = setTimeout(() => {
             connectionStatusEl.style.opacity = '0';
+            connectionHideTimer = null;
         }, 3000);
     } else {
         connectionStatusEl.className = 'connection-lost';
         connectionTextEl.textContent = '🔴 Sin conexión';
+        
+        // Ocultar gradualmente tras 10s para no molestar permanentemente
+        connectionHideTimer = setTimeout(() => {
+            connectionStatusEl.style.opacity = '0.5';
+            connectionHideTimer = null;
+        }, 10000);
     }
 }
 
@@ -71,6 +86,7 @@ let wsReconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 let wsInstance = null;
 let pingTimer = null;
+let wsConnectionAttempts = 0;
 
 function connectWebSocket() {
     // Cerrar instancia anterior si existe
@@ -85,11 +101,14 @@ function connectWebSocket() {
     
     const ws = new WebSocket(WS_URL);
     wsInstance = ws;
+    wsConnectionAttempts++;
+    console.log('[WS] Intento de conexión #' + wsConnectionAttempts + ' a ' + WS_URL);
 
     ws.onopen = () => {
-        console.log("🟢 WebSocket conectado");
+        console.log('[WS] Conectado exitosamente en intento #' + wsConnectionAttempts);
         updateConnectionStatus(true);
-        wsReconnectDelay = 1000; // Resetear backoff
+        wsReconnectDelay = 1000;
+        wsConnectionAttempts = 0;
         
         // Ping cada 30 segundos para mantener viva la conexión
         pingTimer = setInterval(() => {
@@ -137,8 +156,12 @@ function connectWebSocket() {
             clearInterval(pingTimer);
             pingTimer = null;
         }
-        console.log(`🔴 WebSocket desconectado (código ${event.code}). Reconectando en ${wsReconnectDelay/1000}s...`);
+        console.log('[WS] Desconectado (código ' + event.code + ', intentos: ' + wsConnectionAttempts + '). Reconectando en ' + (wsReconnectDelay/1000) + 's...');
         updateConnectionStatus(false);
+        
+        if (wsConnectionAttempts <= 2) {
+            connectionStatusEl.style.opacity = '0.5';
+        }
         
         // Backoff exponencial con cota máxima
         setTimeout(connectWebSocket, wsReconnectDelay);
@@ -146,8 +169,7 @@ function connectWebSocket() {
     };
 
     ws.onerror = (error) => {
-        console.error('Error en WebSocket:', error);
-        // El onclose se disparará después, no hacemos nada extra aquí
+        console.error('[WS] Error en intento #' + wsConnectionAttempts + ':', error);
     };
 }
 
@@ -169,21 +191,45 @@ document.addEventListener('DOMContentLoaded', () => {
         gpsBtn.addEventListener('click', findNearbyStops);
     }
     
-    // Configurar botón de Refresh / Purga de Caché
+    // CORRECCIÓN: Botón de Refresh - desregistrar SW antes de recargar
     const refreshBtn = document.getElementById('btn-refresh');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', async () => {
+            console.log('[Refresh] Iniciando limpieza completa...');
+            
+            // 1. Cerrar WebSocket activo
+            if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
+                wsInstance.close(1000, 'Usuario solicitó refresh');
+            }
+            
+            // 2. Desregistrar todos los Service Workers
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (const reg of registrations) {
+                        await reg.unregister();
+                    }
+                    console.log('[Refresh] ' + registrations.length + ' SW desregistrados.');
+                } catch (err) {
+                    console.error('[Refresh] Error desregistrando SW:', err);
+                }
+            }
+            
+            // 3. Borrar todos los cachés
             if ('caches' in window) {
                 try {
                     const cacheNames = await caches.keys();
                     await Promise.all(cacheNames.map(name => caches.delete(name)));
-                    console.log("Cachés borrados.");
+                    console.log('[Refresh] ' + cacheNames.length + ' cachés borrados.');
                 } catch (err) {
-                    console.error("Error borrando caché:", err);
+                    console.error('[Refresh] Error borrando caché:', err);
                 }
             }
-            // Forzar recarga desde el servidor
-            window.location.reload();
+            
+            // 4. Recargar limpio
+            setTimeout(() => {
+                window.location.reload();
+            }, 300);
         });
     }
 });
