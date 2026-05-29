@@ -64,8 +64,14 @@ services:
   web:
     image: docker.io/library/caddy:2.8-alpine
     container_name: optibus_web
+    environment:
+      # Inject DOMAIN for Caddyfile automatic HTTPS
+      - DOMAIN=${DOMAIN:-localhost}
     ports:
-      - "${CADDY_PORT:-8080}:8080"
+      # Prod DevSecOps: HTTP/HTTPS standard ports instead of 8080
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:z
       - ./frontend:/srv/frontend:z
@@ -75,7 +81,7 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/ || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

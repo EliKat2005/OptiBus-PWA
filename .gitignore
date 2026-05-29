@@ -28,7 +28,8 @@ mobile-driver/**/*.iml
 # ==== DevSecOps: Secretos, Entornos y Certificados ====
 # NUNCA subir estos archivos al control de versiones
 .env
-.env.*
+.env.local
+.env.prod
 *.jks
 *.keystore
 *.pem
