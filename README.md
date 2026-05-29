@@ -12,52 +12,75 @@ El sistema está dividido en:
 
 ## Requisitos Previos
 
-- Tener instalado [Docker](https://docs.docker.com/get-docker/) y Docker Compose, o bien [Podman](https://podman.io/) y Podman Compose.
-- Puertos `8080`, `8000` y `5432` disponibles localmente.
+- Tener instalado [Podman](https://podman.io/) y `podman-compose` (Recomendado bajo arquitecturas rootless/DevSecOps) o bien Docker.
+- Git instalado en tu máquina o servidor.
+- Puertos `80` (HTTP) y `443` (HTTPS) disponibles en tu firewall (NSG en Azure).
 
-## Guía de Arranque (Local)
+## 🚀 Despliegue en Producción (Servidor Azure VM / VPS)
 
-Sigue estos pasos cuidadosamente para levantar el proyecto tras haberlo clonado:
+OptiBus está diseñado bajo una arquitectura **DevSecOps** segura. Nuestro proxy Caddy se encarga de aislar la capa interna y generar tus certificados SSL dinámicamente usando tu dominio.
 
-### 1. Construir y Levantar los Contenedores
-En la raíz del proyecto, ejecuta (utiliza `podman` si empleas Podman en lugar de Docker):
+### 1. Clonar y Configurar Entorno
+Entra a tu servidor virtual vía SSH y clona el proyecto:
 
 ```bash
-docker compose up --build -d
+git clone https://github.com/TU_USUARIO/OptiBus-PWA.git
+cd OptiBus-PWA
 ```
 
-### 2. Poblar la Base de Datos (Ingesta Inicial)
-> **⚠️ IMPORTANTE:** El orden de ingesta es estricto. Las paradas dependen de que su ruta exista primero en la base de datos debido a las dependencias de Llave Foránea (Foreign Key).
-
-**Primero**, ingesta la ruta estructurada desde el archivo GPX:
+Genera tu archivo de configuración seguro a partir de la plantilla y edítalo:
 ```bash
-docker exec -it optibus_api python ingest_gpx.py data/ruta_ejemplo.gpx "Ruta Principal"
+cp .env.example .env
+nano .env
 ```
+> **⚠️ Importante**: Asegúrate de cambiar la variable `DOMAIN` por tu dominio real (Ej. `app.mi-dominio.com`) y colocar una contraseña fuerte en `POSTGRES_PASSWORD`.
 
-**Segundo**, ingesta las paradas del sistema:
+### 2. Despliegue Automatizado
+Asegúrate de haber apuntado el Récord 'A' de tu dominio a la IP pública de tu Azure VM. Luego, corre el script de despliegue principal:
+
 ```bash
-docker exec -it optibus_api python ingest_stops.py data/paradas_ejemplo.json
+./deploy.sh
 ```
 
-### 3. Accesos y Enlaces
+### 3. Poblar la Base de Datos (Primer Arránque)
+> El orden de ingesta es estricto. Las paradas dependen de la existencia de una ruta por las relaciones de Foreign Key en la DDBB espacia.
 
-Una vez levantado todo y habiendo inyectado los datos, puedes acceder a:
-- **Mapa y Usuario Central:** [http://localhost:8080](http://localhost:8080)
-- **Documentación API (Swagger/OpenAPI):** [http://localhost:8000/docs](http://localhost:8000/docs)
+**Primero**, ingiere la ruta estructurada:
+```bash
+podman exec -it optibus_api python ingest_gpx.py data/ruta_ejemplo.gpx "Ruta Principal"
+```
 
-*(Nota: La aplicación del conductor se encuentra en desarrollo activo en el repositorio `mobile-driver/`)*
+**Segundo**, ingiere las paradas del sistema:
+```bash
+podman exec -it optibus_api python ingest_stops.py data/paradas_ejemplo.json
+```
+
+Una vez completado de levantar todo, tu plataforma PWA en vivo está en **https://tulink.com**.
+
+
+## 🔄 Actualizaciones y Mantenimiento Continúo (CI/CD Local)
+
+Como la base de código ha sido tratada a fondo, enviar actualizaciones a producción es sumamente sencillo. 
+Para actualizar tu plataforma con el código nuevo subido desde Github (commits), simplemente accede a la VM por SSH, colócate en la carpeta del repositorio y ejecuta:
+
+```bash
+git pull origin main
+./deploy.sh
+```
+El script `./deploy.sh` **reconstruirá automáticamente** las partes modificadas sin tocar ni corromper tu base de datos persistente. Caddy renovará los puertos y limpiará imágenes huérfanas automáticamente de la VM para ahorrar costos.
 
 ## Estructura del Repositorio
 
 - `backend/`: Código de FastAPI, conexión a DB espacial y modelos de base de datos.
 - `backend/data/`: Archivos semilla (.json y .gpx) de ejemplo para la ingesta de datos base.
-- `frontend/`: Código fuente de las interfaces de usuario web (Pasajeros).
-- `mobile-driver/`: Código nativo (Kotlin) para la app de los conductores (En desarrollo).
-- `Caddyfile`: Configuración del servidor proxy Caddy.
-- `compose.yaml`: Declaración de la infraestructura dockerizada.
+- `frontend/`: Código fuente de las interfaces de usuario web PWA y offline caching Service Worker.
+- `mobile-driver/`: Aplicación Kotlin nativa Android, interactiva por WebSocket seguro al backend.
+- `Caddyfile`: Configuración CSP reforzada del servidor proxy + auto HTTPS.
+- `compose.yaml`: Declaración de la infraestructura dockerizada aislada.
+- `deploy.sh`: Script de mantenimiento ágil DevSecOps y auto-levantamiento.
 
 ## Comandos Adicionales Útiles
 
-- Ver los logs del backend en vivo: `docker compose logs -f api`
-- Apagar todos los servicios: `docker compose down`
-- Apagar todos los servicios y **borrar** el volumen de base de datos (Reset): `docker compose down -v`
+- Revisar los logs en tiempo real o trackear WebSockets: `podman logs -f optibus_api`
+- Apagar todos los servicios manualmente: `podman-compose down`
+- Tumbar todo *destruyendo* el volumen de base de datos (Pelígrosamente destructivo): `podman-compose down -v`
