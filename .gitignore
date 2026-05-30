@@ -44,3 +44,6 @@ mobile-driver/keystore.properties
 
 # ==== Backups locales ====
 backups/
+
+# ==== Rutas grabadas auto-ingestadas (no versionar) ====
+backend/data/recorded_routes/

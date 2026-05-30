@@ -9,17 +9,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, cast, and_, desc
 from geoalchemy2.types import Geography
 from prometheus_fastapi_instrumentator import Instrumentator
+from fastapi import UploadFile, File, Form
 import models
 import asyncio
 import json
 import logging
 import os
 import time
+import re
 from collections import defaultdict
 from secrets import compare_digest
 from datetime import datetime, timezone, timedelta
 import redis.asyncio as aioredis
 import math
+import gpxpy
+import aiofiles
+from pathlib import Path
 
 # --- Logging estructurado ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -573,6 +578,110 @@ async def estimate_eta(
     }
 
 # --- Configuración del simulador ---
+# --- Directorio para rutas grabadas ---
+RECORDED_ROUTES_DIR = Path(__file__).parent / "data" / "recorded_routes"
+RECORDED_ROUTES_DIR.mkdir(parents=True, exist_ok=True)
+
+@app.post("/api/routes/upload")
+async def upload_recorded_route(
+    _auth: None = Depends(verify_api_key),
+    gpx_file: UploadFile = File(...),
+    stops_json: str = Form(...),
+    company: str = Form(default=""),
+    route_name: str = Form(...),
+    tags: str = Form(default=""),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Recibe una ruta grabada desde el APK.
+    - Ingiere la ruta GPX directamente en PostGIS
+    - Guarda las paradas en la BD asociadas a la ruta
+    - Guarda copia JSON/GPX en backend/data/recorded_routes/ para auditoría
+    """
+    # Validar nombre de ruta
+    safe_route_name = re.sub(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ _\-]', '', route_name).strip()
+    if not safe_route_name:
+        raise HTTPException(status_code=400, detail="Nombre de ruta inválido")
+    
+    # Leer y parsear GPX
+    try:
+        gpx_content = await gpx_file.read()
+        gpx = gpxpy.parse(gpx_content.decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error parseando GPX: {e}")
+    
+    points = []
+    for track in gpx.tracks:
+        for segment in track.segments:
+            for point in segment.points:
+                points.append(f"{point.longitude} {point.latitude}")
+    
+    if len(points) < 2:
+        raise HTTPException(status_code=400, detail="Se requieren al menos 2 puntos GPS")
+    
+    # Insertar ruta en PostGIS
+    linestring_wkt = f"SRID=4326;LINESTRING({', '.join(points)})"
+    new_route = models.Route(name=safe_route_name, geom=linestring_wkt)
+    db.add(new_route)
+    await db.flush()  # Obtener el ID generado
+    
+    # Parsear y guardar paradas
+    stops_count = 0
+    try:
+        stops_data = json.loads(stops_json)
+        if isinstance(stops_data, list):
+            for stop in stops_data:
+                if isinstance(stop, dict) and "lat" in stop and "lon" in stop:
+                    stop_name = stop.get("name", f"Parada {stops_count+1}")
+                    stop_point = f"SRID=4326;POINT({stop['lon']} {stop['lat']})"
+                    db.add(models.Stop(
+                        name=str(stop_name)[:255],
+                        route_id=new_route.id,
+                        geom=stop_point
+                    ))
+                    stops_count += 1
+    except json.JSONDecodeError:
+        logger.warning("stops_json no es JSON válido, guardando ruta sin paradas")
+    
+    await db.commit()
+    
+    # Guardar copia de auditoría en backend/data/recorded_routes/
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    base_filename = f"{safe_route_name.replace(' ', '_')}_{timestamp}"
+    
+    # Guardar GPX original
+    gpx_path = RECORDED_ROUTES_DIR / f"{base_filename}.gpx"
+    async with aiofiles.open(gpx_path, "wb") as f:
+        await f.write(gpx_content)
+    
+    # Guardar metadatos JSON
+    meta_path = RECORDED_ROUTES_DIR / f"{base_filename}_meta.json"
+    meta = {
+        "route_name": safe_route_name,
+        "company": company,
+        "tags": [t.strip() for t in tags.split(",") if t.strip()],
+        "points_count": len(points),
+        "stops_count": stops_count,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "route_id": new_route.id
+    }
+    async with aiofiles.open(meta_path, "w") as f:
+        await f.write(json.dumps(meta, indent=2, ensure_ascii=False))
+    
+    logger.info(f"Ruta '{safe_route_name}' subida: {len(points)} puntos, {stops_count} paradas (ID: {new_route.id})")
+    
+    return {
+        "status": "success",
+        "route_id": new_route.id,
+        "route_name": safe_route_name,
+        "points": len(points),
+        "stops": stops_count,
+        "saved_files": [
+            str(gpx_path.relative_to(Path(__file__).parent)),
+            str(meta_path.relative_to(Path(__file__).parent))
+        ]
+    }
+
 @app.get("/api/simulator/status")
 async def simulator_status(_auth: None = Depends(verify_api_key)):
     return {"simulator_enabled": os.getenv("ENABLE_BUS_SIMULATOR", "false").lower() == "true", "active_ws_connections": len(manager.active_connections)}

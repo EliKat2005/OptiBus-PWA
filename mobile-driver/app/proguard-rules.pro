@@ -8,3 +8,13 @@
 # Kotlin
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.AnnotationsKt
+
+# JSON (org.json) usado en GPS uploads
+-keep class org.json.** { *; }
+
+# OptiBus data classes (usadas via Intent/Broadcast)
+-keep class com.optibus.driver.RouteRecorderService$GpsPoint { *; }
+-keep class com.optibus.driver.RouteRecorderService$StopPoint { *; }
+
+# StringEscaper utility
+-keep class com.optibus.driver.StringEscaper { *; }

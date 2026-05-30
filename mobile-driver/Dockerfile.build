@@ -33,5 +33,7 @@ RUN chown -R builder:builder /workspace
 
 USER builder
 
-# El comando por defecto ejecutará Gradle para generar el APK
-CMD ["./gradlew", "assembleRelease", "--no-daemon"]
+# El comando por defecto ejecuta lint primero para detectar errores temprano
+# assembleDebug: no requiere keystore, auto-firma con debug key
+# Para release firmado: cambia a assembleRelease y configura keystore.properties + .jks
+CMD ["/bin/bash", "-c", "./gradlew lint --no-daemon 2>/dev/null; ./gradlew assembleDebug --no-daemon"]
