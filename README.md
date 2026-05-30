@@ -195,16 +195,47 @@ git pull origin main
 
 ## 📋 Endpoints Nuevos (v0.4.0)
 
-| Endpoint | Descripción |
-|---|---|
-| `GET /admin` | Dashboard HTML administrativo |
-| `GET /api/bus/active` | Lista buses activos |
-| `GET /api/bus/history?bus_id=X&minutes=30` | Historial de posiciones |
-| `GET /api/alert/geofence?bus_id=X&lat=Y&lon=Z` | Verificar desvío de ruta |
-| `GET /api/eta?bus_id=X&stop_id=Y` | Tiempo estimado de llegada |
-| `GET /api/simulator/status` | Estado del simulador |
-| `GET /api/auth/status` | Estado de API Key |
-| `GET /metrics` | Métricas Prometheus |
+**Protegidos con doble capa de seguridad**: todos los endpoints administrativos requieren:
+1. **API Key** en el header `Authorization: Bearer <key>` 
+2. **Bloqueo en Caddy**: `/admin` y `/metrics` solo accesibles desde IPs internas (localhost, redes privadas)
+
+| Endpoint | Acceso | Descripción |
+|---|---|---|
+| `GET /admin` | 🔒 API Key + solo IPs internas | Dashboard HTML administrativo |
+| `GET /api/bus/active` | 🔒 API Key | Lista buses activos |
+| `GET /api/bus/history?bus_id=X&minutes=30` | 🔒 API Key | Historial de posiciones |
+| `GET /api/alert/geofence?bus_id=X&lat=Y&lon=Z` | 🔒 API Key | Verificar desvío de ruta |
+| `GET /api/eta?bus_id=X&stop_id=Y` | 🔒 API Key | Tiempo estimado de llegada |
+| `GET /api/simulator/status` | 🔒 API Key | Estado del simulador |
+| `GET /api/auth/status` | 🔒 API Key | Estado de API Key |
+| `GET /metrics` | 🔒 Solo IPs internas | Métricas Prometheus |
+
+### Cómo acceder a los endpoints protegidos
+
+**Desde la VM (acceso local)**:
+```bash
+# Los endpoints con API Key requieren el header Authorization
+curl -H "Authorization: Bearer <tu_api_key>" http://localhost:8000/admin
+curl -H "Authorization: Bearer <tu_api_key>" http://localhost:8000/api/bus/active
+```
+
+**Desde tu PC local (requiere tunnel SSH)**:
+```bash
+# Opción 1: SSH tunnel (recomendado)
+ssh -L 8000:localhost:8000 azureuser@<ip-vm>
+# Luego en otra terminal:
+curl -H "Authorization: Bearer <tu_api_key>" http://localhost:8000/admin
+
+# Opción 2: Acceder via curl desde la VM directamente
+ssh azureuser@<ip-vm>
+curl -H "Authorization: Bearer <tu_api_key>" http://localhost:8000/api/bus/active
+```
+
+**Para Grafana** (también solo accesible desde IPs internas):
+```bash
+ssh -L 3000:localhost:3000 azureuser@<ip-vm>
+# Abrir http://localhost:3000 en el navegador
+```
 
 ## Comandos Adicionales Útiles
 

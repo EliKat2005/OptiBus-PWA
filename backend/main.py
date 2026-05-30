@@ -370,6 +370,7 @@ async def receive_owntracks(payload: dict, request: Request, _auth: None = Depen
 # --- Historial de posiciones ---
 @app.get("/api/bus/history")
 async def get_bus_history(
+    _auth: None = Depends(verify_api_key),
     bus_id: str = Query(..., min_length=1),
     minutes: int = Query(default=30, le=1440),
     db: AsyncSession = Depends(get_db)
@@ -391,7 +392,7 @@ async def get_bus_history(
     return {"bus_id": bus_id, "minutes": minutes, "count": len(positions), "positions": positions}
 
 @app.get("/api/bus/active")
-async def get_active_buses(minutes: int = Query(default=5, le=60), db: AsyncSession = Depends(get_db)):
+async def get_active_buses(_auth: None = Depends(verify_api_key), minutes: int = Query(default=5, le=60), db: AsyncSession = Depends(get_db)):
     """Lista buses activos en los últimos N minutos."""
     since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
     subq = select(
@@ -416,7 +417,7 @@ async def get_active_buses(minutes: int = Query(default=5, le=60), db: AsyncSess
 
 # --- Dashboard Admin (HTML) ---
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard():
+async def admin_dashboard(_auth: None = Depends(verify_api_key)):
     return HTMLResponse("""
 <!DOCTYPE html>
 <html lang="es">
@@ -488,12 +489,13 @@ async def admin_dashboard():
 
 # --- Endpoint estado de API Key (admin) ---
 @app.get("/api/auth/status")
-async def auth_status():
+async def auth_status(_auth: None = Depends(verify_api_key)):
     return {"api_key_enabled": API_KEY_ENABLED, "version": "0.4.0"}
 
 # --- Geocerca / Alerta de desvío ---
 @app.get("/api/alert/geofence")
 async def check_geofence(
+    _auth: None = Depends(verify_api_key),
     bus_id: str = Query(...),
     lat: float = Query(...),
     lon: float = Query(...),
@@ -518,6 +520,7 @@ async def check_geofence(
 # --- ETA: tiempo estimado a una parada ---
 @app.get("/api/eta")
 async def estimate_eta(
+    _auth: None = Depends(verify_api_key),
     bus_id: str = Query(...),
     stop_id: int = Query(...),
     db: AsyncSession = Depends(get_db)
@@ -571,5 +574,5 @@ async def estimate_eta(
 
 # --- Configuración del simulador ---
 @app.get("/api/simulator/status")
-async def simulator_status():
+async def simulator_status(_auth: None = Depends(verify_api_key)):
     return {"simulator_enabled": os.getenv("ENABLE_BUS_SIMULATOR", "false").lower() == "true", "active_ws_connections": len(manager.active_connections)}

@@ -19,7 +19,24 @@
     root * /srv/frontend
     file_server
 
-    # 2. Redirigir peticiones API al backend de FastAPI
+    # 2. Bloquear acceso externo a métricas y admin (solo localhost/Prometheus interno)
+    handle /metrics {
+        @internal {
+            remote_ip 127.0.0.1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+        }
+        reverse_proxy @internal api:8000
+        respond "Acceso denegado" 403
+    }
+
+    handle /admin {
+        @internal {
+            remote_ip 127.0.0.1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+        }
+        reverse_proxy @internal api:8000
+        respond "Acceso denegado" 403
+    }
+
+    # 3. Redirigir peticiones API al backend de FastAPI
     handle /health {
         reverse_proxy api:8000
     }
@@ -28,7 +45,7 @@
         reverse_proxy api:8000
     }
 
-    # 3. WebSocket - Configuración explícita para WS
+    # 4. WebSocket - Configuración explícita para WS
     handle /ws {
         reverse_proxy api:8000 {
             # Headers específicos para WebSocket
@@ -37,7 +54,7 @@
         }
     }
 
-    # 4. Políticas de logs para auditoría de accesos
+    # 5. Políticas de logs para auditoría de accesos
     log {
         output file /var/log/caddy/access.log
         format json
