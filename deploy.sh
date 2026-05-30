@@ -32,7 +32,7 @@ for i in $(seq 1 90); do
         break
     fi
     [ $((i % 10)) -eq 0 ] && echo "   ... ${i}s"
-    [ "$i" -eq 90 ] && { echo "❌ API no respondió. Logs:"; podman logs optibus_api --tail 20; exit 1; }
+    [ "$i" -eq 90 ] && { echo "❌ API no respondió. Logs:"; podman logs optibus_api 2>&1 | tail -30; exit 1; }
     sleep 1
 done
 
