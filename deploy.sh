@@ -23,16 +23,14 @@ fi
 echo "📥 Pull de imágenes base..."
 podman-compose pull 2>/dev/null || true
 
-# 3. Reconstruir solo la API (si cambió código/dependencias)
-echo "🔨 Reconstruyendo API (solo si hay cambios)..."
-podman-compose build api 2>/dev/null || {
-    echo "⚠️  Build de API falló, intentando con --no-cache..."
-    podman-compose build api --no-cache
-}
+# 3. Reconstruir API sin cache (para forzar instalación de nuevas dependencias)
+echo "🔨 Reconstruyendo API (sin cache para nuevas dependencias)..."
+podman-compose build api --no-cache
 
-# 4. Rolling update: levantar servicios sin tirar los existentes primero
-#    podman-compose up -d reconstruye solo lo que cambió, preservando la BD
-echo "🔄 Aplicando actualización sin downtime..."
+# 4. Bajar servicios actuales y levantar con nueva configuración
+#    Podman compose requiere down antes de up cuando hay cambios de topología
+echo "🔄 Aplicando actualización..."
+podman-compose down
 podman-compose up -d --remove-orphans
 
 # 5. Esperar a que la API esté healthy antes de continuar
