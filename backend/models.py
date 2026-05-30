@@ -31,7 +31,7 @@ class BusPosition(Base):
     bus_id = Column(String, index=True, nullable=False)
     geom = Column(Geometry(geometry_type='POINT', srid=4326), nullable=False)
     speed = Column(Float, default=0.0)
-    route_id = Column(Integer, ForeignKey("routes.id"), nullable=True)
+    route_id = Column(Integer, nullable=True)
     recorded_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
     __table_args__ = (

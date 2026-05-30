@@ -580,7 +580,7 @@ async def estimate_eta(
 # --- Configuración del simulador ---
 # --- Directorio para rutas grabadas ---
 RECORDED_ROUTES_DIR = Path(__file__).parent / "data" / "recorded_routes"
-RECORDED_ROUTES_DIR.mkdir(parents=True, exist_ok=True)
+RECORDED_ROUTES_DIR.mkdir(parents=True, exist_ok=True, mode=0o755)
 
 @app.post("/api/routes/upload")
 async def upload_recorded_route(
