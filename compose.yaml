@@ -57,6 +57,8 @@ services:
   api:
     build: ./backend
     container_name: optibus_api
+    ports:
+      - "127.0.0.1::8000"
     environment:
       <<: *default-env
       ENABLE_BUS_SIMULATOR: ${ENABLE_BUS_SIMULATOR:-false}
