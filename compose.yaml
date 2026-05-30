@@ -37,6 +37,7 @@ services:
     container_name: optibus_api
     environment:
       <<: *default-env
+      OPTIBUS_API_KEY: ${OPTIBUS_API_KEY}
       ENABLE_BUS_SIMULATOR: ${ENABLE_BUS_SIMULATOR:-true}
     depends_on:
       db:
