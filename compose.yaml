@@ -73,11 +73,10 @@ services:
     working_dir: /app
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     deploy:
-      replicas: ${API_REPLICAS:-2}
       resources:
         limits:
-          cpus: "0.50"
-          memory: 384M
+          cpus: "0.75"
+          memory: 512M
     healthcheck:
       test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
       interval: 15s
