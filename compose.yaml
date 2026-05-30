@@ -8,7 +8,6 @@ x-env: &default-env
   POSTGRES_PORT: ${POSTGRES_PORT:-5432}
 
 services:
-  # Redis para rate limiting distribuido
   redis:
     image: docker.io/library/redis:7-alpine
     container_name: optibus_redis
@@ -37,8 +36,6 @@ services:
       <<: *default-env
     volumes:
       - db_data:/var/lib/postgresql/data
-    # DevSecOps: Puerto no expuesto. Acceso solo vía red interna backend_net.
-    # Para tareas admin: podman exec -it optibus_db psql -U optibus -d optibus
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-optibus} -d ${POSTGRES_DB:-optibus}"]
       interval: 10s
@@ -57,8 +54,6 @@ services:
   api:
     build: ./backend
     container_name: optibus_api
-    ports:
-      - "127.0.0.1::8000"
     environment:
       <<: *default-env
       ENABLE_BUS_SIMULATOR: ${ENABLE_BUS_SIMULATOR:-false}
@@ -107,7 +102,7 @@ services:
       - caddy_config:/config
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/ || exit 1"]
       interval: 30s
@@ -138,7 +133,7 @@ services:
       - "127.0.0.1:9090:9090"
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
       interval: 30s
@@ -169,7 +164,7 @@ services:
       - "127.0.0.1:3000:3000"
     depends_on:
       prometheus:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
