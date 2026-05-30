@@ -28,19 +28,31 @@ echo "🔨 Reconstruyendo API (sin cache para nuevas dependencias)..."
 podman-compose build api --no-cache
 
 # 4. Bajar servicios actuales y levantar con nueva configuración
-#    Podman compose requiere down antes de up cuando hay cambios de topología
 echo "🔄 Aplicando actualización..."
-podman-compose down
-podman-compose up -d --remove-orphans
+# Tolerar contenedores ya eliminados (podman-compose down en estado limpio)
+podman-compose down 2>/dev/null || true
+
+# Levantar base de datos y Redis primero y esperar a que estén listos
+echo "  → Levantando DB + Redis..."
+podman-compose up -d db redis 2>/dev/null
+echo "  → Esperando 15s a que DB y Redis estén healthy..."
+sleep 15
+
+# Levantar API, web, y monitoreo
+echo "  → Levantando API + Web + Monitoreo..."
+podman-compose up -d --remove-orphans 2>/dev/null
 
 # 5. Esperar a que la API esté healthy antes de continuar
 echo "⏳ Esperando healthcheck de la API..."
-for i in $(seq 1 30); do
+for i in $(seq 1 60); do
     if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
         echo "✅ API healthy."
         break
     fi
-    [ "$i" -eq 30 ] && echo "⚠️  API no respondió después de 30s, verifica logs."
+    if [ $((i % 15)) -eq 0 ]; then
+        echo "  → Aún esperando... (${i}s)"
+    fi
+    [ "$i" -eq 60 ] && echo "⚠️  API no respondió después de 60s, verifica: podman logs optibus_api"
     sleep 1
 done
 
