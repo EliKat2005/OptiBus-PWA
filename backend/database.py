@@ -2,10 +2,22 @@ import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+# Cargar .env solo si existe (desarrollo local), en producción las variables
+# se inyectan desde compose.yaml
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # DevSecOps: Construir DATABASE_URL desde variables de entorno individuales
 # sin hardcodear credenciales
 POSTGRES_USER = os.getenv("POSTGRES_USER", "optibus")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+if not POSTGRES_PASSWORD:
+    raise RuntimeError(
+        "POSTGRES_PASSWORD es requerida. Define la variable de entorno o crea un archivo .env"
+    )
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "optibus")

@@ -1,75 +1,313 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center_horizontal"
-    android:orientation="vertical"
-    android:padding="24dp"
-    android:background="#F5F5F5">
+    android:background="#F5F5F5"
+    android:fillViewport="true">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="OptiBus Conductor"
-        android:textSize="28sp"
-        android:textStyle="bold"
-        android:textColor="#333333"
-        android:layout_marginTop="32dp"
-        android:layout_marginBottom="16dp"/>
-
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Configuración del Servidor:"
-        android:textStyle="bold"
-        android:textColor="#555555"/>
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="20dp">
 
-    <EditText
-        android:id="@+id/etServerIp"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Ej. 192.168.1.12:8000"
-        android:inputType="textUri"
-        android:background="#FFFFFF"
-        android:padding="12dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="24dp"
-        android:elevation="2dp" />
+        <!-- Título -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="OptiBus Conductor v2.0"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:textColor="#1565C0"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="8dp"/>
 
-    <TextView
-        android:id="@+id/tvStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Estado: Desconectado"
-        android:textAlignment="center"
-        android:textColor="#D32F2F"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:padding="16dp"
-        android:layout_marginBottom="24dp"/>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Recolección de Rutas y Paradas"
+            android:textSize="14sp"
+            android:textColor="#757575"
+            android:layout_marginBottom="20dp"/>
 
-    <Button
-        android:id="@+id/btnStart"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="16dp"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:backgroundTint="#1976D2"
-        android:textColor="#FFFFFF"
-        android:text="INICIAR TRANSMISIÓN" />
-        
-    <Button
-        android:id="@+id/btnStop"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="16dp"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:backgroundTint="#757575"
-        android:textColor="#FFFFFF"
-        android:layout_marginTop="16dp"
-        android:visibility="gone"
-        android:text="DETENER TRANSMISIÓN" />
+        <!-- Sección: Datos de la Ruta -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📋 DATOS DE LA RUTA"
+            android:textStyle="bold"
+            android:textColor="#424242"
+            android:textSize="13sp"
+            android:letterSpacing="0.05"
+            android:layout_marginBottom="8dp"/>
 
-</LinearLayout>
+        <EditText
+            android:id="@+id/etCompany"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Compañía de autobús (Ej. TransIbarra)"
+            android:inputType="text"
+            android:maxLength="60"
+            android:background="#FFFFFF"
+            android:padding="12dp"
+            android:layout_marginBottom="10dp"
+            android:elevation="1dp"/>
+
+        <EditText
+            android:id="@+id/etRouteName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Nombre de la ruta (Ej. Centro - Terminal)"
+            android:inputType="text"
+            android:maxLength="80"
+            android:background="#FFFFFF"
+            android:padding="12dp"
+            android:layout_marginBottom="10dp"
+            android:elevation="1dp"/>
+
+        <EditText
+            android:id="@+id/etTags"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Tags (Ej. urbano, norte, express)"
+            android:inputType="text"
+            android:maxLength="120"
+            android:background="#FFFFFF"
+            android:padding="12dp"
+            android:layout_marginBottom="10dp"
+            android:elevation="1dp"/>
+
+        <!-- Divisor -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#E0E0E0"
+            android:layout_marginVertical="16dp"/>
+
+        <!-- Sección: Control de Grabación -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⏺️ GRABACIÓN DE RUTA"
+            android:textStyle="bold"
+            android:textColor="#424242"
+            android:textSize="13sp"
+            android:letterSpacing="0.05"
+            android:layout_marginBottom="8dp"/>
+
+        <!-- Estadísticas en tiempo real -->
+        <LinearLayout
+            android:id="@+id/llStats"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:padding="12dp"
+            android:background="#E3F2FD"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center">
+
+                <TextView
+                    android:id="@+id/tvPointCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:textColor="#1565C0"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Puntos GPS"
+                    android:textSize="11sp"
+                    android:textColor="#424242"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center">
+
+                <TextView
+                    android:id="@+id/tvStopCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:textColor="#2E7D32"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Paradas"
+                    android:textSize="11sp"
+                    android:textColor="#424242"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center">
+
+                <TextView
+                    android:id="@+id/tvDistance"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0.0 km"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="#E65100"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Distancia"
+                    android:textSize="11sp"
+                    android:textColor="#424242"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Estado -->
+        <TextView
+            android:id="@+id/tvRecordingStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⏸️ Listo para grabar"
+            android:textAlignment="center"
+            android:textColor="#757575"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:padding="10dp"
+            android:background="#FAFAFA"
+            android:layout_marginBottom="12dp"/>
+
+        <!-- Botón Iniciar/Detener Grabación -->
+        <Button
+            android:id="@+id/btnRecord"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:backgroundTint="#D32F2F"
+            android:textColor="#FFFFFF"
+            android:text="⏺️ INICIAR GRABACIÓN" />
+
+        <!-- Botón Detener Grabación (visible solo durante grabación) -->
+        <Button
+            android:id="@+id/btnStopRecord"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="8dp"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:backgroundTint="#424242"
+            android:textColor="#FFFFFF"
+            android:visibility="gone"
+            android:text="⏹️ DETENER Y EXPORTAR" />
+
+        <!-- Botón Registrar Parada (visible solo durante grabación) -->
+        <Button
+            android:id="@+id/btnAddStop"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="8dp"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:backgroundTint="#2E7D32"
+            android:textColor="#FFFFFF"
+            android:visibility="gone"
+            android:text="🚏 REGISTRAR PARADA AQUÍ" />
+
+        <!-- Mensaje de parada registrada -->
+        <TextView
+            android:id="@+id/tvStopAddedMsg"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textAlignment="center"
+            android:textColor="#2E7D32"
+            android:textSize="14sp"
+            android:padding="8dp"
+            android:visibility="gone"/>
+
+        <!-- Divisor -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#E0E0E0"
+            android:layout_marginVertical="16dp"/>
+
+        <!-- Sección: Configuración del Servidor -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🌐 CONEXIÓN AL SERVIDOR"
+            android:textStyle="bold"
+            android:textColor="#424242"
+            android:textSize="13sp"
+            android:letterSpacing="0.05"
+            android:layout_marginBottom="8dp"/>
+
+        <EditText
+            android:id="@+id/etServerIp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="IP:Puerto (Ej. 192.168.1.12:8000)"
+            android:inputType="textUri"
+            android:maxLength="100"
+            android:background="#FFFFFF"
+            android:padding="12dp"
+            android:layout_marginBottom="12dp"
+            android:elevation="1dp"/>
+
+        <TextView
+            android:id="@+id/tvServerStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Servidor: Desconectado"
+            android:textAlignment="center"
+            android:textColor="#D32F2F"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:padding="12dp"
+            android:background="#FFEBEE"
+            android:layout_marginBottom="12dp"/>
+
+        <!-- Botón Iniciar Transmisión a Servidor -->
+        <Button
+            android:id="@+id/btnStartTransmission"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="14dp"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:backgroundTint="#1976D2"
+            android:textColor="#FFFFFF"
+            android:text="📡 INICIAR TRANSMISIÓN" />
+
+        <Button
+            android:id="@+id/btnStopTransmission"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="14dp"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:backgroundTint="#757575"
+            android:textColor="#FFFFFF"
+            android:layout_marginTop="8dp"
+            android:visibility="gone"
+            android:text="🔌 DETENER TRANSMISIÓN" />
+
+    </LinearLayout>
+</ScrollView>

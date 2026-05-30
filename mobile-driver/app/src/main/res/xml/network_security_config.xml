@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DevSecOps: Configuración de seguridad de red para Android -->
+<!-- Fuerza TLS en todas las conexiones y restringe cleartext -->
+<network-security-config>
+    <!-- Por defecto: bloquear todo tráfico cleartext (HTTP) -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- Solo confiar en CAs del sistema (no user-installed) -->
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Excepción: permitir cleartext solo en redes locales para desarrollo -->
+    <!-- En producción en Azure, esto no aplica porque se usa wss:// -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.0.0/8</domain>
+        <domain includeSubdomains="false">172.16.0.0/12</domain>
+        <domain includeSubdomains="false">192.168.0.0/16</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

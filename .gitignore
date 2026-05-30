@@ -38,3 +38,9 @@ mobile-driver/**/*.iml
 *.p12
 secrets/
 config/credentials.*
+
+# ==== Android Keystore Properties (credentials) ====
+mobile-driver/keystore.properties
+
+# ==== Backups locales ====
+backups/

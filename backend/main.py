@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Request, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, field_validator
 from contextlib import asynccontextmanager
 from database import engine, Base, get_db
@@ -14,13 +15,46 @@ import logging
 import os
 import time
 from collections import defaultdict
+from secrets import compare_digest
 
 # --- Logging estructurado ---
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 )
 logger = logging.getLogger("optibus-api")
+
+# --- API Key Auth (DevSecOps: autenticación configurable) ---
+# Si OPTIBUS_API_KEY no está definida, la autenticación se desactiva
+# (retrocompatible con despliegues existentes). Si se define, los endpoints
+# de escritura GPS requieren el header Authorization: Bearer <key>
+OPTIBUS_API_KEY = os.getenv("OPTIBUS_API_KEY", "").strip()
+API_KEY_ENABLED = len(OPTIBUS_API_KEY) >= 16  # mínimo 16 chars para considerarse válida
+
+if API_KEY_ENABLED:
+    logger.info("API Key auth HABILITADA para endpoints GPS")
+else:
+    logger.warning("API Key auth DESHABILITADA. Define OPTIBUS_API_KEY (mín. 16 chars) para activar.")
+
+security = HTTPBearer(auto_error=False)
+
+async def verify_api_key(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
+    """Valida API Key solo si está configurada. Si no hay key, deja pasar (retrocompatibilidad)."""
+    if not API_KEY_ENABLED:
+        return True
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API Key requerida. Usa Authorization: Bearer <key>",
+        )
+    if not compare_digest(credentials.credentials, OPTIBUS_API_KEY):
+        logger.warning(f"Intento de acceso con API Key inválida: {credentials.credentials[:4]}...")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API Key inválida",
+        )
+    return True
 
 # --- Rate Limiter simple (DevSecOps: anti-abuso) ---
 class RateLimiter:
@@ -162,7 +196,21 @@ async def rate_limit_middleware(request: Request, call_next):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "service": "optibus-api", "version": "0.2.0"}
+    """Healthcheck que verifica también conectividad a la base de datos."""
+    db_status = "unknown"
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(select(func.literal(1)))
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {type(e).__name__}"
+        logger.error(f"Healthcheck DB fallido: {e}")
+    return {
+        "status": "ok",
+        "service": "optibus-api",
+        "version": "0.3.0",
+        "database": db_status
+    }
 
 @app.get("/api/routes")
 async def get_routes(db: AsyncSession = Depends(get_db)):
@@ -291,7 +339,7 @@ class GPSPayload(BaseModel):
         return v
 
 @app.post("/api/gps/update")
-async def receive_gps(payload: GPSPayload, request: Request):
+async def receive_gps(payload: GPSPayload, request: Request, _auth: None = Depends(verify_api_key)):
     """Recibe la posición real de un bus/conductor y la retransmite al instante por WebSocket."""
     logger.info(f"GPS Update recibido de {payload.bus_id}: ({payload.lat}, {payload.lon}) desde {request.client.host}")
     
@@ -313,7 +361,7 @@ async def receive_gps(payload: GPSPayload, request: Request):
 
 # --- FASE B.2: Endpoint para App Nativa de Flotas FOSS (OwnTracks) ---
 @app.post("/api/gps/owntracks")
-async def receive_owntracks(payload: dict, request: Request):
+async def receive_owntracks(payload: dict, request: Request, _auth: None = Depends(verify_api_key)):
     """
     Recibe un webhook nativo en segundo plano desde la aplicación libre 'OwnTracks'.
     """

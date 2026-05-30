@@ -15,9 +15,8 @@ services:
       <<: *default-env
     volumes:
       - db_data:/var/lib/postgresql/data
-    ports:
-      # DevSecOps: Bind solo a localhost para evitar exposición externa
-      - "127.0.0.1:5432:5432"
+    # DevSecOps: Puerto no expuesto. Acceso solo vía red interna backend_net.
+    # Para tareas admin: podman exec -it optibus_db psql -U optibus -d optibus
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-optibus} -d ${POSTGRES_DB:-optibus}"]
       interval: 10s
@@ -47,7 +46,7 @@ services:
     working_dir: /app
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/docs\")' || exit 1"]
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3

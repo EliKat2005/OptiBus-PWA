@@ -93,14 +93,31 @@ class LocationForegroundService : Service(), LocationListener {
         webSocket?.close(1000, "Reconectando")
         
         val client = OkHttpClient()
-        // DevSecOps: Permitir conexión dinámica. Validar si omitieron ws://
-        val url = if (serverIp.startsWith("ws://") || serverIp.startsWith("wss://")) {
-            "$serverIp/ws"
-        } else {
-            "ws://$serverIp/ws"
+        // DevSecOps: Forzar wss:// en producción, ws:// solo para IPs locales
+        val isLocalIp = serverIp.matches(
+            Regex("^(10\\.|172\\.(1[6-9]|2[0-9]|3[0-1])\\.|192\\.168\\.|127\\.|localhost).*")
+        )
+        val protocol = if (isLocalIp) "ws" else "wss"
+        
+        val url = when {
+            serverIp.startsWith("ws://") || serverIp.startsWith("wss://") ->
+                if (isLocalIp) serverIp else serverIp.replace("ws://", "wss://")
+            else -> "$protocol://$serverIp/ws"
         }
         
-        val request = Request.Builder().url(url).build()
+        Log.i("OptiBus", "Conectando WebSocket a $url (local=$isLocalIp, protocol=$protocol)")
+        
+        val requestBuilder = Request.Builder().url(url)
+        
+        // Agregar API Key si está configurada en SharedPreferences
+        val prefs = getSharedPreferences("OptiBusPrefs", Context.MODE_PRIVATE)
+        val apiKey = prefs.getString("api_key", "")?.trim()
+        if (!apiKey.isNullOrEmpty()) {
+            requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+            Log.d("OptiBus", "API Key configurada para autenticación")
+        }
+        
+        val request = requestBuilder.build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d("OptiBus", "WebSocket Conectado a $url")

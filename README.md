@@ -79,8 +79,57 @@ El script `./deploy.sh` **reconstruirá automáticamente** las partes modificada
 - `compose.yaml`: Declaración de la infraestructura dockerizada aislada.
 - `deploy.sh`: Script de mantenimiento ágil DevSecOps y auto-levantamiento.
 
+## 🔐 Seguridad: Configurar API Key para Endpoints GPS
+
+Para proteger los endpoints de escritura GPS (`/api/gps/update`, `/api/gps/owntracks`), define una API Key en tu `.env`:
+
+```bash
+# Genera una key segura en tu VM:
+openssl rand -base64 32
+# Copia el resultado y pégalo en .env:
+OPTIBUS_API_KEY=TU_KEY_GENERADA
+```
+
+> Si `OPTIBUS_API_KEY` no se define, los endpoints funcionan sin autenticación (retrocompatible con despliegues existentes). En producción, **siempre define esta variable**.
+
+Para que la app Android use la API Key, ingresa la misma key en el campo `api_key` de SharedPreferences o configúrala programáticamente.
+
+## 💾 Backup Automático de Base de Datos
+
+El script `scripts/backup-db.sh` realiza backups comprimidos de PostgreSQL/PostGIS. Para programarlo diariamente:
+
+```bash
+# En la VM de Azure, agrega al crontab:
+crontab -e
+# Agrega esta línea (backup diario a las 2:00 AM):
+0 2 * * * /home/tu_usuario/OptiBus-PWA/scripts/backup-db.sh /home/tu_usuario/backups
+```
+
+Para restaurar un backup:
+```bash
+./scripts/restore-db.sh ./backups/optibus_backup_20250101_020000.sql.gz
+```
+
+## 📱 App Android: Configuración Segura del Keystore
+
+Las credenciales del keystore ya no se almacenan en `build.gradle.kts`. Para firmar el APK:
+
+```bash
+cd mobile-driver
+cp keystore.properties.template keystore.properties
+nano keystore.properties  # Configura tus credenciales reales
+```
+
+El archivo `keystore.properties` está en `.gitignore` y nunca se sube al repositorio.
+
+## 🔒 Configuración de Red Segura (Android)
+
+La app fuerza HTTPS/WSS para todas las conexiones externas. Solo permite HTTP sin cifrar en redes locales (192.168.x.x, 10.x.x.x, localhost) para desarrollo.
+
 ## Comandos Adicionales Útiles
 
 - Revisar los logs en tiempo real o trackear WebSockets: `podman logs -f optibus_api`
+- Verificar health de la API: `curl -s http://localhost:8000/health | jq`
+- Acceder a la BD directamente: `podman exec -it optibus_db psql -U optibus_admin -d optibus_prod`
 - Apagar todos los servicios manualmente: `podman-compose down`
 - Tumbar todo *destruyendo* el volumen de base de datos (Pelígrosamente destructivo): `podman-compose down -v`

@@ -4,10 +4,13 @@
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
-        X-XSS-Protection "1; mode=block"
         Referrer-Policy "no-referrer-when-downgrade"
-        # CORRECCIÓN: CSP ampliado con connect-src para WebSocket y CDNs
-        Content-Security-Policy "default-src 'self'; script-src 'self' https://unpkg.com 'unsafe-inline'; style-src 'self' https://unpkg.com 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org https://cdn-icons-png.flaticon.com https://cdn.iconscout.com https://unpkg.com; connect-src 'self' ws: wss: https://*.tile.openstreetmap.org https://unpkg.com; font-src 'self';"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+        # CSP reforzado: unsafe-inline solo para estilos de Leaflet (necesario para tiles)
+        # La directiva unsafe-inline se mantiene en style-src porque Leaflet
+        # inyecta estilos dinámicamente para posicionar tiles. Los scripts
+        # inline del HTML se movieron a app.js para eliminar unsafe-inline en script-src.
+        Content-Security-Policy "default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org https://cdn-icons-png.flaticon.com https://cdn.iconscout.com https://unpkg.com; connect-src 'self' ws: wss: https://*.tile.openstreetmap.org https://unpkg.com; font-src 'self'; worker-src 'self'; manifest-src 'self';"
         # Ocultar versión del servidor
         -Server
     }
@@ -25,7 +28,7 @@
         reverse_proxy api:8000
     }
 
-    # 3. WebSocket - CORRECCIÓN: Configuración explícita para WS
+    # 3. WebSocket - Configuración explícita para WS
     handle /ws {
         reverse_proxy api:8000 {
             # Headers específicos para WebSocket

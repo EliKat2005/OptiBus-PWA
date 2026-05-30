@@ -173,6 +173,17 @@ function connectWebSocket() {
     };
 }
 
+// Registrar Service Worker (movido desde inline en HTML para cumplir CSP sin unsafe-inline)
+function initServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then(reg => console.log('✅ Service Worker registrado:', reg.scope))
+                .catch(err => console.error('❌ Error registrando SW:', err));
+        });
+    }
+}
+
 // DevSecOps: Escapar HTML para prevenir XSS en popups
 function escapeHtml(str) {
     const div = document.createElement('div');
@@ -182,6 +193,7 @@ function escapeHtml(str) {
 
 // Inicializar al cargar el DOM
 document.addEventListener('DOMContentLoaded', () => {
+    initServiceWorker();
     loadRoutes();
     connectWebSocket();
     

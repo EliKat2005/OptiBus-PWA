@@ -1,6 +1,21 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+// DevSecOps: Cargar credenciales del keystore desde archivo externo
+// Crea keystore.properties en la raíz de mobile-driver/ con:
+//   KEYSTORE_FILE=../optibus-release-key.jks
+//   KEYSTORE_PASSWORD=tu_password
+//   KEY_ALIAS=optibus
+//   KEY_PASSWORD=tu_password
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -11,16 +26,18 @@ android {
         applicationId = "com.optibus.driver"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "2.1"
     }
 
     signingConfigs {
         create("release") {
-            storeFile = file("../optibus-release-key.jks")
-            storePassword = "optibus-f-droid"
-            keyAlias = "optibus"
-            keyPassword = "optibus-f-droid"
+            if (keystorePropertiesFile.exists()) {
+                storeFile = file(keystoreProperties["KEYSTORE_FILE"] as String)
+                storePassword = keystoreProperties["KEYSTORE_PASSWORD"] as String
+                keyAlias = keystoreProperties["KEY_ALIAS"] as String
+                keyPassword = keystoreProperties["KEY_PASSWORD"] as String
+            }
         }
     }
 
@@ -30,7 +47,10 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
+            // Solo firmar si el keystore está configurado
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
