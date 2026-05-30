@@ -122,14 +122,98 @@ nano keystore.properties  # Configura tus credenciales reales
 
 El archivo `keystore.properties` está en `.gitignore` y nunca se sube al repositorio.
 
+## 📊 Dashboard de Administración
+
+Accede al panel de control en `https://tudominio.com/admin` para ver:
+- Buses activos en tiempo real
+- Estado de conexiones WebSocket
+- Métricas de sistema (DB, Redis, versión)
+- Tabla de buses con última posición y velocidad
+
+## 🧭 Geocerca y Alertas de Desvío
+
+Verifica si un bus está dentro de la ruta:
+```bash
+curl "https://tudominio.com/api/alert/geofence?bus_id=Bus-1&lat=0.35&lon=-78.12&max_distance_meters=200"
+```
+
+## ⏱️ ETA - Tiempo Estimado de Llegada
+
+Calcula cuánto tardará un bus en llegar a una parada:
+```bash
+curl "https://tudominio.com/api/eta?bus_id=Bus-1&stop_id=1"
+```
+
+## 🗺️ Soporte Multi-Ruta
+
+El simulador ahora soporta múltiples rutas simultáneamente. Si tienes más de una ruta en la base de datos, se crearán buses para cada una.
+
+## 📡 Monitoreo con Prometheus + Grafana
+
+Métricas disponibles en `/metrics` (Prometheus). Grafana accesible en `http://localhost:3000` (solo desde la VM).
+
+```bash
+# Ver métricas
+curl http://localhost:8000/metrics
+
+# Acceder a Grafana (requiere tunnel SSH o VPN)
+# Usuario: admin / Contraseña: la definida en .env (GRAFANA_PASSWORD)
+```
+
 ## 🔒 Configuración de Red Segura (Android)
 
 La app fuerza HTTPS/WSS para todas las conexiones externas. Solo permite HTTP sin cifrar en redes locales (192.168.x.x, 10.x.x.x, localhost) para desarrollo.
 
+## 🧪 Tests Automatizados
+
+Ejecutar tests localmente:
+```bash
+cd backend
+pip install pytest pytest-asyncio httpx
+python -m pytest test_api.py -v
+```
+
+CI/CD con GitHub Actions: cada push a `main` ejecuta tests, linters y análisis de seguridad (Bandit + ShellCheck).
+
+## 🚀 Actualizar desde la VM de Azure
+
+```bash
+ssh azureuser@<ip-vm>
+cd ~/OptiBus-PWA
+git pull origin main
+
+# Si es la primera vez con esta versión, actualiza .env:
+# nano .env
+# Agrega: REDIS_URL=redis://redis:6379/0
+#         GRAFANA_PASSWORD=<tu_password_seguro>
+#         API_REPLICAS=2
+
+./deploy.sh
+```
+
+> **Nota**: El primer despliegue después de esta actualización tomará ~2-3 minutos extra porque se descarga Redis, Prometheus y Grafana.
+
+## 📋 Endpoints Nuevos (v0.4.0)
+
+| Endpoint | Descripción |
+|---|---|
+| `GET /admin` | Dashboard HTML administrativo |
+| `GET /api/bus/active` | Lista buses activos |
+| `GET /api/bus/history?bus_id=X&minutes=30` | Historial de posiciones |
+| `GET /api/alert/geofence?bus_id=X&lat=Y&lon=Z` | Verificar desvío de ruta |
+| `GET /api/eta?bus_id=X&stop_id=Y` | Tiempo estimado de llegada |
+| `GET /api/simulator/status` | Estado del simulador |
+| `GET /api/auth/status` | Estado de API Key |
+| `GET /metrics` | Métricas Prometheus |
+
 ## Comandos Adicionales Útiles
 
-- Revisar los logs en tiempo real o trackear WebSockets: `podman logs -f optibus_api`
-- Verificar health de la API: `curl -s http://localhost:8000/health | jq`
-- Acceder a la BD directamente: `podman exec -it optibus_db psql -U optibus_admin -d optibus_prod`
-- Apagar todos los servicios manualmente: `podman-compose down`
-- Tumbar todo *destruyendo* el volumen de base de datos (Pelígrosamente destructivo): `podman-compose down -v`
+- Revisar logs API: `podman logs -f optibus_api`
+- Verificar health: `curl -s http://localhost:8000/health`
+- Métricas Prometheus: `curl -s http://localhost:8000/metrics`
+- Acceder a BD: `podman exec -it optibus_db psql -U optibus_admin -d optibus_prod`
+- Conectar a Redis: `podman exec -it optibus_redis redis-cli`
+- Ver réplicas activas: `podman ps --filter name=optibus_api`
+- Dashboard admin: `https://tudominio.com/admin`
+- Apagar servicios: `podman-compose down`
+- Destruir todo (⚠️): `podman-compose down -v`

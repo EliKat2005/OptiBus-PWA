@@ -1,13 +1,14 @@
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Request, HTTPException, status
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Request, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, field_validator
 from contextlib import asynccontextmanager
 from database import engine, Base, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, cast
+from sqlalchemy import select, func, cast, and_, desc
 from geoalchemy2.types import Geography
+from prometheus_fastapi_instrumentator import Instrumentator
 import models
 import asyncio
 import json
@@ -16,6 +17,9 @@ import os
 import time
 from collections import defaultdict
 from secrets import compare_digest
+from datetime import datetime, timezone, timedelta
+import redis.asyncio as aioredis
+import math
 
 # --- Logging estructurado ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -25,12 +29,53 @@ logging.basicConfig(
 )
 logger = logging.getLogger("optibus-api")
 
+# --- Redis para rate limiting distribuido ---
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+redis_client: aioredis.Redis | None = None
+
+async def get_redis() -> aioredis.Redis | None:
+    global redis_client
+    if redis_client is None:
+        try:
+            redis_client = aioredis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
+            await redis_client.ping()
+            logger.info("Conectado a Redis para rate limiting distribuido")
+        except Exception as e:
+            logger.warning(f"Redis no disponible, usando rate limiter en memoria: {e}")
+            redis_client = False  # type: ignore
+    return redis_client if redis_client is not False else None
+
+class DistributedRateLimiter:
+    """Rate limiter con fallback a memoria si Redis no está disponible."""
+    def __init__(self, max_requests: int = 30, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.fallback_clients: dict[str, list[float]] = defaultdict(list)
+
+    async def is_allowed(self, client_ip: str) -> bool:
+        r = await get_redis()
+        if r:
+            key = f"rl:{client_ip}"
+            current = await r.incr(key)
+            if current == 1:
+                await r.expire(key, self.window_seconds)
+            return current <= self.max_requests
+        # Fallback en memoria
+        now = time.time()
+        self.fallback_clients[client_ip] = [
+            ts for ts in self.fallback_clients[client_ip]
+            if now - ts < self.window_seconds
+        ]
+        if len(self.fallback_clients[client_ip]) >= self.max_requests:
+            return False
+        self.fallback_clients[client_ip].append(now)
+        return True
+
+rate_limiter = DistributedRateLimiter(max_requests=30, window_seconds=60)
+
 # --- API Key Auth (DevSecOps: autenticación configurable) ---
-# Si OPTIBUS_API_KEY no está definida, la autenticación se desactiva
-# (retrocompatible con despliegues existentes). Si se define, los endpoints
-# de escritura GPS requieren el header Authorization: Bearer <key>
 OPTIBUS_API_KEY = os.getenv("OPTIBUS_API_KEY", "").strip()
-API_KEY_ENABLED = len(OPTIBUS_API_KEY) >= 16  # mínimo 16 chars para considerarse válida
+API_KEY_ENABLED = len(OPTIBUS_API_KEY) >= 16
 
 if API_KEY_ENABLED:
     logger.info("API Key auth HABILITADA para endpoints GPS")
@@ -40,7 +85,6 @@ else:
 security = HTTPBearer(auto_error=False)
 
 async def verify_api_key(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
-    """Valida API Key solo si está configurada. Si no hay key, deja pasar (retrocompatibilidad)."""
     if not API_KEY_ENABLED:
         return True
     if credentials is None:
@@ -55,27 +99,6 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials | None = Depe
             detail="API Key inválida",
         )
     return True
-
-# --- Rate Limiter simple (DevSecOps: anti-abuso) ---
-class RateLimiter:
-    def __init__(self, max_requests: int = 30, window_seconds: int = 60):
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
-        self.clients: dict[str, list[float]] = defaultdict(list)
-
-    def is_allowed(self, client_ip: str) -> bool:
-        now = time.time()
-        # Limpiar timestamps antiguos
-        self.clients[client_ip] = [
-            ts for ts in self.clients[client_ip]
-            if now - ts < self.window_seconds
-        ]
-        if len(self.clients[client_ip]) >= self.max_requests:
-            return False
-        self.clients[client_ip].append(now)
-        return True
-
-rate_limiter = RateLimiter(max_requests=30, window_seconds=60)
 
 # Manejador de conexiones WebSocket con logging
 class ConnectionManager:
@@ -99,58 +122,68 @@ class ConnectionManager:
             except Exception as e:
                 logger.warning(f"Error enviando broadcast a WS: {e}")
                 disconnected.append(connection)
-        # Limpiar conexiones fallidas
         for conn in disconnected:
             if conn in self.active_connections:
                 self.active_connections.remove(conn)
 
 manager = ConnectionManager()
 
-# --- Background task para simular buses ---
+# --- Background task para simular buses (multi-ruta) ---
 async def bus_simulator():
-    """Simula el movimiento de buses siguiendo las rutas de PostGIS."""
     await asyncio.sleep(5)
     
     async with engine.begin() as conn:
         result = await conn.execute(
-            select(func.ST_AsGeoJSON(models.Route.geom)).where(models.Route.id == 1)
+            select(models.Route.id, func.ST_AsGeoJSON(models.Route.geom))
         )
-        row = result.scalar()
-        
-    if not row:
+        routes_data = result.all()
+    
+    if not routes_data:
         logger.warning("No hay rutas para simular.")
         return
-        
-    geojson = json.loads(row)
-    coordinates = geojson.get("coordinates", [])
     
-    if not coordinates:
-        logger.warning("Ruta vacía, no se puede simular.")
+    all_buses = []
+    for route_id, geojson_str in routes_data:
+        geojson = json.loads(geojson_str)
+        coords = geojson.get("coordinates", [])
+        if not coords or len(coords) < 2:
+            continue
+        all_buses.append({
+            "id": f"bus_r{route_id}_1",
+            "idx": 0,
+            "direction": 1,
+            "coords": coords,
+            "route_id": route_id
+        })
+        if len(coords) > 4:
+            all_buses.append({
+                "id": f"bus_r{route_id}_2",
+                "idx": len(coords) // 2,
+                "direction": 1,
+                "coords": coords,
+                "route_id": route_id
+            })
+    
+    if not all_buses:
+        logger.warning("No hay coordenadas válidas para simular.")
         return
     
-    bus1_idx = 0
-    bus2_idx = len(coordinates) // 2
-    
-    logger.info(f"Simulador iniciado con {len(coordinates)} puntos de ruta.")
+    logger.info(f"Simulador iniciado con {len(all_buses)} buses en {len(routes_data)} rutas.")
     
     while True:
         if manager.active_connections:
-            lon1, lat1 = coordinates[bus1_idx]
-            lon2, lat2 = coordinates[bus2_idx]
+            buses_payload = []
+            for bus in all_buses:
+                lon, lat = bus["coords"][bus["idx"]]
+                buses_payload.append({"id": bus["id"], "lat": lat, "lon": lon})
+                
+                bus["idx"] += bus["direction"]
+                if bus["idx"] >= len(bus["coords"]) or bus["idx"] < 0:
+                    bus["direction"] *= -1
+                    bus["idx"] += bus["direction"] * 2
+                bus["idx"] = bus["idx"] % len(bus["coords"])
             
-            payload = json.dumps({
-                "type": "bus_positions",
-                "buses": [
-                    {"id": "bus_1", "lat": lat1, "lon": lon1},
-                    {"id": "bus_2", "lat": lat2, "lon": lon2}
-                ]
-            })
-            
-            await manager.broadcast(payload)
-            
-            bus1_idx = (bus1_idx + 1) % len(coordinates)
-            bus2_idx = (bus2_idx + 1) % len(coordinates)
-            
+            await manager.broadcast(json.dumps({"type": "bus_positions", "buses": buses_payload}))
         await asyncio.sleep(3)
 
 @asynccontextmanager
@@ -161,236 +194,382 @@ async def lifespan(app: FastAPI):
     task = None
     if os.getenv("ENABLE_BUS_SIMULATOR", "false").lower() == "true":
         task = asyncio.create_task(bus_simulator())
-        logger.info("Simulador de buses HABILITADO.")
-    else:
-        logger.info("Simulador de buses DESHABILITADO (variable ENABLE_BUS_SIMULATOR=false).")
+        logger.info("Simulador de buses HABILITADO (multi-ruta).")
     
     yield
     if task:
         task.cancel()
 
-app = FastAPI(title="OptiBus MVP", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="OptiBus", version="0.4.0", lifespan=lifespan)
 
-# DevSecOps: CORS restrictivo (no usar "*" en producción)
-ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080").split(",")
+# Métricas Prometheus
+instrumentator = Instrumentator().instrument(app)
+instrumentator.expose(app, include_in_schema=False)
+
+# CORS
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:80,http://localhost,http://127.0.0.1").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],  # Solo métodos necesarios
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# --- Middleware de Rate Limiting ---
+# Rate limiting
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     client_ip = request.client.host if request.client else "unknown"
-    if not rate_limiter.is_allowed(client_ip):
+    if not await rate_limiter.is_allowed(client_ip):
         logger.warning(f"Rate limit excedido para IP: {client_ip}")
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Demasiadas solicitudes. Intente de nuevo más tarde."}
-        )
-    response = await call_next(request)
-    return response
+        return JSONResponse(status_code=429, content={"detail": "Demasiadas solicitudes."})
+    return await call_next(request)
+
+# --- Endpoints ---
 
 @app.get("/health")
 async def health_check():
-    """Healthcheck que verifica también conectividad a la base de datos."""
     db_status = "unknown"
+    redis_status = "unknown"
     try:
         async with engine.begin() as conn:
             await conn.execute(select(func.literal(1)))
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {type(e).__name__}"
-        logger.error(f"Healthcheck DB fallido: {e}")
-    return {
-        "status": "ok",
-        "service": "optibus-api",
-        "version": "0.3.0",
-        "database": db_status
-    }
+    try:
+        r = await get_redis()
+        if r:
+            await r.ping()
+            redis_status = "connected"
+        else:
+            redis_status = "disabled"
+    except Exception as e:
+        redis_status = f"error: {type(e).__name__}"
+    return {"status": "ok", "service": "optibus-api", "version": "0.4.0", "database": db_status, "redis": redis_status}
 
 @app.get("/api/routes")
 async def get_routes(db: AsyncSession = Depends(get_db)):
-    """Devuelve las rutas almacenadas en formato GeoJSON FeatureCollection para Leaflet."""
-    logger.info("GET /api/routes solicitado")
     result = await db.execute(
         select(models.Route.id, models.Route.name, func.ST_AsGeoJSON(models.Route.geom).label('geojson'))
     )
-    
     features = []
     for row in result:
-        feature = {
+        features.append({
             "type": "Feature",
-            "properties": {
-                "id": row.id,
-                "name": row.name
-            },
+            "properties": {"id": row.id, "name": row.name},
             "geometry": json.loads(row.geojson)
-        }
-        features.append(feature)
-        
-    return {
-        "type": "FeatureCollection",
-        "features": features
-    }
+        })
+    return {"type": "FeatureCollection", "features": features}
 
 @app.get("/api/stops/nearby")
 async def get_nearby_stops(
-    lat: float,
-    lon: float,
-    radius_meters: float = 500.0,
+    lat: float, lon: float, radius_meters: float = 500.0, max_results: int = Query(default=50, le=200),
     db: AsyncSession = Depends(get_db)
 ):
-    """Encuentra paradas cercanas a una coordenada usando ST_DWithin."""
-    # DevSecOps: Validar rangos de coordenadas
     if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Coordenadas inválidas. lat debe estar entre -90 y 90, lon entre -180 y 180."}
-        )
+        return JSONResponse(status_code=400, content={"detail": "Coordenadas inválidas."})
     if radius_meters > 10000:
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Radio máximo permitido: 10000 metros."}
-        )
-    
-    logger.info(f"GET /api/stops/nearby lat={lat} lon={lon} radius={radius_meters}")
+        return JSONResponse(status_code=400, content={"detail": "Radio máximo: 10000 metros."})
     
     point = f"SRID=4326;POINT({lon} {lat})"
-    
     query = select(
-        models.Stop.id,
-        models.Stop.name,
+        models.Stop.id, models.Stop.name,
         func.ST_AsGeoJSON(models.Stop.geom).label('geojson'),
-        func.ST_DistanceSphere(
-            models.Stop.geom, 
-            func.ST_GeomFromText(point, 4326)
-        ).label('distance') 
+        func.ST_DistanceSphere(models.Stop.geom, func.ST_GeomFromText(point, 4326)).label('distance')
     ).where(
-        func.ST_DWithin(
-            cast(models.Stop.geom, Geography),
-            cast(func.ST_GeomFromText(point, 4326), Geography),
-            radius_meters
-        )
-    ).order_by('distance')
+        func.ST_DWithin(cast(models.Stop.geom, Geography), cast(func.ST_GeomFromText(point, 4326), Geography), radius_meters)
+    ).order_by('distance').limit(max_results)
     
     result = await db.execute(query)
-    
-    stops = []
-    for row in result:
-        stops.append({
-            "id": row.id,
-            "name": row.name,
-            "distance": round(row.distance, 2),
-            "geometry": json.loads(row.geojson)
-        })
-        
+    stops = [{"id": r.id, "name": r.name, "distance": round(r.distance, 2), "geometry": json.loads(r.geojson)} for r in result]
     return {"radius_meters": radius_meters, "nearby_stops": stops}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """Endpoint WebSocket para que frontend y apps driver compartan posiciones en tiempo real."""
     await manager.connect(websocket)
     try:
         while True:
-            # Esperar mensajes (posiciones del conductor) y hacer broadcast general
             text = await asyncio.wait_for(websocket.receive_text(), timeout=120.0)
             try:
                 data = json.loads(text)
-                # Si recibimos datos válidos de un bus, lo verificamos y reenviamos
                 if data.get("type") == "bus_positions":
-                    # Se inyecta "source":"real" para distinguir en Frontend
                     for bus in data.get("buses", []):
                         bus["source"] = "real"
                     await manager.broadcast(json.dumps(data))
             except json.JSONDecodeError:
-                logger.warning(f"JSON inválido recibido en WS: {text}")
+                logger.warning(f"JSON inválido en WS: {text}")
     except asyncio.TimeoutError:
-        logger.info("WebSocket timeout (ping no recibido)")
+        logger.info("WebSocket timeout")
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        logger.error(f"WebSocket error inésperado: {e}")
+        logger.error(f"WebSocket error: {e}")
     finally:
         manager.disconnect(websocket)
 
-# --- FASE B: Endpoint de Recepción GPS (Móvil / IoT) ---
-
+# --- GPS Payload ---
 class GPSPayload(BaseModel):
     bus_id: str
     lat: float
     lon: float
+    speed: float = 0.0
+    route_id: int | None = None
 
     @field_validator('lat')
     @classmethod
-    def validate_lat(cls, v: float) -> float:
-        if not -90 <= v <= 90:
-            raise ValueError('Latitud debe estar entre -90 y 90')
+    def validate_lat(cls, v): 
+        if not -90 <= v <= 90: raise ValueError('Latitud inválida')
         return v
-
     @field_validator('lon')
     @classmethod
-    def validate_lon(cls, v: float) -> float:
-        if not -180 <= v <= 180:
-            raise ValueError('Longitud debe estar entre -180 y 180')
+    def validate_lon(cls, v): 
+        if not -180 <= v <= 180: raise ValueError('Longitud inválida')
         return v
 
 @app.post("/api/gps/update")
-async def receive_gps(payload: GPSPayload, request: Request, _auth: None = Depends(verify_api_key)):
-    """Recibe la posición real de un bus/conductor y la retransmite al instante por WebSocket."""
-    logger.info(f"GPS Update recibido de {payload.bus_id}: ({payload.lat}, {payload.lon}) desde {request.client.host}")
+async def receive_gps(payload: GPSPayload, request: Request, _auth: None = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
+    """Recibe posición GPS y la guarda en historial + broadcast."""
     
-    ws_message = json.dumps({
+    # Guardar en historial
+    point = f"SRID=4326;POINT({payload.lon} {payload.lat})"
+    try:
+        db.add(models.BusPosition(
+            bus_id=payload.bus_id,
+            geom=func.ST_GeomFromText(point, 4326),
+            speed=payload.speed,
+            route_id=payload.route_id,
+            recorded_at=datetime.now(timezone.utc)
+        ))
+        await db.commit()
+    except Exception as e:
+        logger.error(f"Error guardando posición: {e}")
+        await db.rollback()
+    
+    # Broadcast WebSocket
+    await manager.broadcast(json.dumps({
         "type": "bus_positions",
-        "buses": [
-            {
-                "id": payload.bus_id,
-                "lat": payload.lat,
-                "lon": payload.lon,
-                "source": "real"
-            }
-        ]
-    })
-    
-    await manager.broadcast(ws_message)
-    
-    return {"status": "success", "message": f"Posición de {payload.bus_id} retransmitida."}
+        "buses": [{"id": payload.bus_id, "lat": payload.lat, "lon": payload.lon, "source": "real", "route_id": payload.route_id}]
+    }))
+    return {"status": "success"}
 
-# --- FASE B.2: Endpoint para App Nativa de Flotas FOSS (OwnTracks) ---
 @app.post("/api/gps/owntracks")
 async def receive_owntracks(payload: dict, request: Request, _auth: None = Depends(verify_api_key)):
-    """
-    Recibe un webhook nativo en segundo plano desde la aplicación libre 'OwnTracks'.
-    """
     if payload.get("_type") == "location":
-        lat = payload.get("lat")
-        lon = payload.get("lon")
-        
-        # DevSecOps: Validar coordenadas recibidas
-        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
-            return {"status": "error", "reason": "Coordenadas inválidas"}
-        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
-            return {"status": "error", "reason": "Coordenadas fuera de rango"}
-        
+        lat, lon = payload.get("lat"), payload.get("lon")
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)): return {"status": "error"}
+        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180): return {"status": "error"}
         tracker_id = payload.get("tid", "BUS")
-        bus_id = f"BUS-{tracker_id.upper()}"
-        
-        logger.info(f"OwnTracks recibido de {bus_id}: ({lat}, {lon})")
-        
-        ws_message = json.dumps({
+        await manager.broadcast(json.dumps({
             "type": "bus_positions",
-            "buses": [{
-                "id": bus_id,
-                "lat": lat,
-                "lon": lon,
-                "source": "owntracks_native"
-            }]
-        })
-        
-        await manager.broadcast(ws_message)
+            "buses": [{"id": f"BUS-{tracker_id.upper()}", "lat": lat, "lon": lon, "source": "owntracks_native"}]
+        }))
         return {"status": "success"}
+    return {"status": "ignored"}
+
+# --- Historial de posiciones ---
+@app.get("/api/bus/history")
+async def get_bus_history(
+    bus_id: str = Query(..., min_length=1),
+    minutes: int = Query(default=30, le=1440),
+    db: AsyncSession = Depends(get_db)
+):
+    """Obtiene el historial de posiciones de un bus en los últimos N minutos."""
+    since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    result = await db.execute(
+        select(
+            models.BusPosition.bus_id,
+            func.ST_Y(models.BusPosition.geom).label('lat'),
+            func.ST_X(models.BusPosition.geom).label('lon'),
+            models.BusPosition.speed,
+            models.BusPosition.recorded_at
+        ).where(
+            and_(models.BusPosition.bus_id == bus_id, models.BusPosition.recorded_at >= since)
+        ).order_by(models.BusPosition.recorded_at.asc()).limit(2000)
+    )
+    positions = [{"lat": r.lat, "lon": r.lon, "speed": r.speed, "time": r.recorded_at.isoformat()} for r in result]
+    return {"bus_id": bus_id, "minutes": minutes, "count": len(positions), "positions": positions}
+
+@app.get("/api/bus/active")
+async def get_active_buses(minutes: int = Query(default=5, le=60), db: AsyncSession = Depends(get_db)):
+    """Lista buses activos en los últimos N minutos."""
+    since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    subq = select(
+        models.BusPosition.bus_id,
+        func.max(models.BusPosition.recorded_at).label('last_seen')
+    ).where(models.BusPosition.recorded_at >= since).group_by(models.BusPosition.bus_id).subquery()
     
-    return {"status": "ignored", "reason": "Not a location payload"}
+    result = await db.execute(
+        select(
+            models.BusPosition.bus_id,
+            func.ST_Y(models.BusPosition.geom).label('lat'),
+            func.ST_X(models.BusPosition.geom).label('lon'),
+            models.BusPosition.speed,
+            subq.c.last_seen
+        ).join(subq, and_(
+            models.BusPosition.bus_id == subq.c.bus_id,
+            models.BusPosition.recorded_at == subq.c.last_seen
+        )).order_by(models.BusPosition.bus_id)
+    )
+    buses = [{"bus_id": r.bus_id, "lat": r.lat, "lon": r.lon, "speed": round(r.speed, 1), "last_seen": r.last_seen.isoformat()} for r in result]
+    return {"active_count": len(buses), "buses": buses}
+
+# --- Dashboard Admin (HTML) ---
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_dashboard():
+    return HTMLResponse("""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OptiBus Admin Dashboard</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;padding:20px}
+        h1{text-align:center;margin-bottom:20px;color:#38bdf8}
+        .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;max-width:1200px;margin:0 auto}
+        .card{background:#1e293b;border-radius:12px;padding:20px;border:1px solid #334155}
+        .card h2{font-size:1rem;color:#94a3b8;margin-bottom:8px}
+        .card .value{font-size:2rem;font-weight:bold;color:#38bdf8}
+        .card .sub{font-size:.8rem;color:#64748b;margin-top:4px}
+        table{width:100%;border-collapse:collapse;margin-top:12px}
+        th,td{padding:8px 12px;text-align:left;border-bottom:1px solid #334155}
+        th{color:#94a3b8;font-weight:600;font-size:.8rem}
+        td{font-size:.9rem}
+        .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem}
+        .badge-active{background:#065f46;color:#6ee7b7}
+        .status-bar{display:flex;gap:16px;justify-content:center;margin-bottom:20px;flex-wrap:wrap}
+        .status-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
+        .status-dot.ok{background:#10b981}
+        .status-dot.err{background:#ef4444}
+        #alert-box{background:#7f1d1d;border:1px solid #ef4444;padding:12px;border-radius:8px;margin-top:16px;display:none}
+        .route-badge{background:#1e40af;color:#93c5fd;padding:2px 8px;border-radius:6px;font-size:.75rem}
+    </style>
+</head>
+<body>
+    <h1>🚌 OptiBus Admin Dashboard</h1>
+    <div class="status-bar" id="statusBar"></div>
+    <div class="grid">
+        <div class="card"><h2>🚌 Buses Activos</h2><div class="value" id="activeBuses">-</div><div class="sub">Últimos 5 minutos</div></div>
+        <div class="card"><h2>🔌 WebSocket</h2><div class="value" id="wsClients">-</div><div class="sub">Conexiones activas</div></div>
+        <div class="card"><h2>📡 Posiciones (24h)</h2><div class="value" id="totalPositions">-</div><div class="sub">Registros GPS guardados</div></div>
+        <div class="card"><h2>🛡️ API Key</h2><div class="value" id="apiKeyStatus">-</div><div class="sub">Estado de autenticación</div></div>
+    </div>
+    <div class="card" style="max-width:1200px;margin:16px auto">
+        <h2>📍 Buses Activos Ahora</h2>
+        <div style="overflow-x:auto"><table><thead><tr><th>Bus ID</th><th>Latitud</th><th>Longitud</th><th>Velocidad</th><th>Última vez</th></tr></thead><tbody id="busesTable"></tbody></table></div>
+    </div>
+    <div id="alert-box">⚠️ <span id="alertMessage"></span></div>
+    <script>
+        async function loadData(){
+            try{
+                const h=await fetch('/health');const hd=await h.json();
+                document.getElementById('statusBar').innerHTML=
+                    `<span><span class="status-dot ${hd.database==='connected'?'ok':'err'}"></span>DB: ${hd.database}</span>`+
+                    `<span><span class="status-dot ${hd.redis==='connected'?'ok':'err'}"></span>Redis: ${hd.redis}</span>`+
+                    `<span>v${hd.version}</span>`;
+                
+                const ab=await fetch('/api/bus/active?minutes=5');const abd=await ab.json();
+                document.getElementById('activeBuses').textContent=abd.active_count;
+                const tb=document.getElementById('busesTable');
+                tb.innerHTML=abd.buses.map(b=>
+                    `<tr><td>${b.bus_id}</td><td>${b.lat.toFixed(6)}</td><td>${b.lon.toFixed(6)}</td><td>${b.speed} km/h</td><td>${new Date(b.last_seen).toLocaleTimeString()}</td></tr>`
+                ).join('')||'<tr><td colspan="5">No hay buses activos</td></tr>';
+                
+                const ak=await fetch('/api/auth/status');const akd=await ak.json();
+                document.getElementById('apiKeyStatus').textContent=akd.api_key_enabled?'🔒 Habilitada':'⚠️ Deshabilitada';
+            }catch(e){console.error(e)}
+        }
+        loadData();setInterval(loadData,10000);
+    </script>
+</body>
+</html>""")
+
+# --- Endpoint estado de API Key (admin) ---
+@app.get("/api/auth/status")
+async def auth_status():
+    return {"api_key_enabled": API_KEY_ENABLED, "version": "0.4.0"}
+
+# --- Geocerca / Alerta de desvío ---
+@app.get("/api/alert/geofence")
+async def check_geofence(
+    bus_id: str = Query(...),
+    lat: float = Query(...),
+    lon: float = Query(...),
+    max_distance_meters: float = Query(default=200.0, le=5000.0),
+    db: AsyncSession = Depends(get_db)
+):
+    """Verifica si un bus está dentro de la geocerca de alguna ruta."""
+    point = f"SRID=4326;POINT({lon} {lat})"
+    result = await db.execute(
+        select(
+            models.Route.id, models.Route.name,
+            func.ST_Distance(models.Route.geom, func.ST_GeomFromText(point, 4326)).label('distance')
+        ).where(
+            func.ST_DWithin(models.Route.geom, func.ST_GeomFromText(point, 4326), max_distance_meters)
+        ).order_by('distance').limit(1)
+    )
+    row = result.first()
+    if row:
+        return {"bus_id": bus_id, "status": "on_route", "route_name": row.name, "route_id": row.id, "distance_m": round(row.distance, 1)}
+    return {"bus_id": bus_id, "status": "off_route", "alert": f"Bus fuera de ruta (>{max_distance_meters}m)"}
+
+# --- ETA: tiempo estimado a una parada ---
+@app.get("/api/eta")
+async def estimate_eta(
+    bus_id: str = Query(...),
+    stop_id: int = Query(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Estima tiempo de llegada a una parada basado en la última posición y velocidad."""
+    # Última posición del bus
+    last_pos = await db.execute(
+        select(
+            func.ST_Y(models.BusPosition.geom).label('lat'),
+            func.ST_X(models.BusPosition.geom).label('lon'),
+            models.BusPosition.speed,
+            models.BusPosition.recorded_at
+        ).where(models.BusPosition.bus_id == bus_id)
+        .order_by(desc(models.BusPosition.recorded_at)).limit(1)
+    )
+    pos = last_pos.first()
+    if not pos:
+        return JSONResponse(status_code=404, content={"detail": "Bus sin datos recientes"})
+    
+    # Posición de la parada
+    stop = await db.execute(
+        select(func.ST_Y(models.Stop.geom).label('lat'), func.ST_X(models.Stop.geom).label('lon'), models.Stop.name)
+        .where(models.Stop.id == stop_id)
+    )
+    stop_row = stop.first()
+    if not stop_row:
+        return JSONResponse(status_code=404, content={"detail": "Parada no encontrada"})
+    
+    # Distancia (haversine simplificada)
+    R = 6371000
+    dlat = math.radians(stop_row.lat - pos.lat)
+    dlon = math.radians(stop_row.lon - pos.lon)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(pos.lat)) * math.cos(math.radians(stop_row.lat)) * math.sin(dlon/2)**2
+    distance_m = R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    
+    speed_ms = max(pos.speed / 3.6, 2.78) if pos.speed > 0 else 8.33  # min 10 km/h, default 30 km/h
+    eta_seconds = distance_m / speed_ms
+    eta_minutes = round(eta_seconds / 60, 1)
+    
+    time_diff = (datetime.now(timezone.utc) - pos.recorded_at).total_seconds() if pos.recorded_at else 0
+    
+    return {
+        "bus_id": bus_id,
+        "stop_id": stop_id,
+        "stop_name": stop_row.name,
+        "distance_m": round(distance_m, 1),
+        "eta_minutes": eta_minutes,
+        "speed_kmh": round(speed_ms * 3.6, 1),
+        "last_position_age_seconds": round(time_diff, 1)
+    }
+
+# --- Configuración del simulador ---
+@app.get("/api/simulator/status")
+async def simulator_status():
+    return {"simulator_enabled": os.getenv("ENABLE_BUS_SIMULATOR", "false").lower() == "true", "active_ws_connections": len(manager.active_connections)}

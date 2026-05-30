@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import okhttp3.*
+import okhttp3.CertificatePinner
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -92,7 +93,8 @@ class LocationForegroundService : Service(), LocationListener {
         // Cerrar previo si existe
         webSocket?.close(1000, "Reconectando")
         
-        val client = OkHttpClient()
+        val prefs = getSharedPreferences("OptiBusPrefs", Context.MODE_PRIVATE)
+        
         // DevSecOps: Forzar wss:// en producción, ws:// solo para IPs locales
         val isLocalIp = serverIp.matches(
             Regex("^(10\\.|172\\.(1[6-9]|2[0-9]|3[0-1])\\.|192\\.168\\.|127\\.|localhost).*")
@@ -107,10 +109,34 @@ class LocationForegroundService : Service(), LocationListener {
         
         Log.i("OptiBus", "Conectando WebSocket a $url (local=$isLocalIp, protocol=$protocol)")
         
+        // DevSecOps: OkHttpClient con Certificate Pinning para conexiones no locales
+        val clientBuilder = OkHttpClient.Builder()
+        
+        if (!isLocalIp) {
+            // Extraer hostname para certificate pinning
+            val hostname = serverIp
+                .replace("ws://", "").replace("wss://", "")
+                .substringBefore(":").substringBefore("/")
+            
+            // Certificate pinning: solo si el usuario ha configurado pins en SharedPreferences
+            val pinSha256 = prefs.getString("cert_pin_sha256", "")?.trim()
+            if (!pinSha256.isNullOrEmpty()) {
+                val certificatePinner = CertificatePinner.Builder()
+                    .add(hostname, "sha256/$pinSha256")
+                    // Backup pin de Let's Encrypt (opcional, agregar si se requiere)
+                    .build()
+                clientBuilder.certificatePinner(certificatePinner)
+                Log.i("OptiBus", "Certificate pinning HABILITADO para $hostname")
+            } else {
+                Log.w("OptiBus", "Certificate pinning DESHABILITADO. Configura cert_pin_sha256 en SharedPreferences para activar.")
+            }
+        }
+        
+        val client = clientBuilder.build()
+        
         val requestBuilder = Request.Builder().url(url)
         
         // Agregar API Key si está configurada en SharedPreferences
-        val prefs = getSharedPreferences("OptiBusPrefs", Context.MODE_PRIVATE)
         val apiKey = prefs.getString("api_key", "")?.trim()
         if (!apiKey.isNullOrEmpty()) {
             requestBuilder.addHeader("Authorization", "Bearer $apiKey")

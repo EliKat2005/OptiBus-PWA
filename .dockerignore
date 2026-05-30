@@ -16,6 +16,13 @@ __pycache__/
 venv/
 env/
 
+# ==== CI/CD ====
+.github/
+
+# ==== Monitoreo ====
+prometheus.yml
+grafana-datasources.yml
+
 # ==== Secretos ====
 .env*
 *.jks

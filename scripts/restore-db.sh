@@ -33,15 +33,32 @@ if [ "$CONFIRM" != "SI" ]; then
 fi
 
 echo "[$(date)] Iniciando restauración de ${POSTGRES_DB}..."
+echo "   (Usando pg_restore porque el backup está en formato custom/binario)"
 
-# Restaurar desde backup comprimido
-if gunzip -c "${BACKUP_FILE}" | PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+# Drop y recreate para una restauración limpia (pg_restore --clean puede fallar)
+PGPASSWORD="${POSTGRES_PASSWORD}" dropdb \
+    -h "${POSTGRES_HOST}" \
+    -p "${POSTGRES_PORT}" \
+    -U "${POSTGRES_USER}" \
+    --if-exists "${POSTGRES_DB}" 2>/dev/null || true
+
+PGPASSWORD="${POSTGRES_PASSWORD}" createdb \
+    -h "${POSTGRES_HOST}" \
+    -p "${POSTGRES_PORT}" \
+    -U "${POSTGRES_USER}" \
+    "${POSTGRES_DB}"
+
+# Restaurar usando pg_restore (formato custom con compresión -Z 9)
+if PGPASSWORD="${POSTGRES_PASSWORD}" pg_restore \
     -h "${POSTGRES_HOST}" \
     -p "${POSTGRES_PORT}" \
     -U "${POSTGRES_USER}" \
     -d "${POSTGRES_DB}" \
+    --no-owner \
+    --no-acl \
     --single-transaction \
-    --set ON_ERROR_STOP=on; then
+    --exit-on-error \
+    "${BACKUP_FILE}"; then
     echo "[$(date)] ✅ Restauración completada exitosamente."
 else
     echo "[$(date)] ❌ Error durante la restauración."

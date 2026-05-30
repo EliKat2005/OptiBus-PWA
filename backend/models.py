@@ -1,15 +1,14 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Index
 from geoalchemy2 import Geometry
 from sqlalchemy.orm import relationship
 from database import Base
+from datetime import datetime, timezone
 
 class Route(Base):
     __tablename__ = "routes"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
-    # Almacenamos la trayectoria de la ruta como un LineString.
-    # SRID 4326 corresponde a WGS 84 (coordenadas GPS de latitud y longitud).
     geom = Column(Geometry(geometry_type='LINESTRING', srid=4326), nullable=False)
 
     stops = relationship("Stop", back_populates="route")
@@ -20,7 +19,21 @@ class Stop(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
     route_id = Column(Integer, ForeignKey("routes.id"))
-    # Almacenamos la ubicación exacta de la parada como un Point.
     geom = Column(Geometry(geometry_type='POINT', srid=4326), nullable=False)
 
     route = relationship("Route", back_populates="stops")
+
+class BusPosition(Base):
+    """Historial de posiciones GPS de los buses."""
+    __tablename__ = "bus_positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bus_id = Column(String, index=True, nullable=False)
+    geom = Column(Geometry(geometry_type='POINT', srid=4326), nullable=False)
+    speed = Column(Float, default=0.0)
+    route_id = Column(Integer, ForeignKey("routes.id"), nullable=True)
+    recorded_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+    __table_args__ = (
+        Index('idx_bus_positions_bus_time', 'bus_id', 'recorded_at'),
+    )
