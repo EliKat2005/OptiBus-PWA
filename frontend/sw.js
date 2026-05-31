@@ -7,8 +7,10 @@ const ASSETS_TO_CACHE = [
   '/index.html',
   '/app.js',
   '/style.css',
+  '/sw.js',
   '/manifest.json',
-  '/icons/icon-192.png'
+  '/icons/icon-192.png',
+  '/icons/icon-512.png'
 ];
 
 // Dominios externos que NUNCA deben cachearse (tiles, CDNs, etc.)

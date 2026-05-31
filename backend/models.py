@@ -13,6 +13,10 @@ class Route(Base):
 
     stops = relationship("Stop", back_populates="route")
 
+    __table_args__ = (
+        Index('idx_routes_geom_gist', 'geom', postgresql_using='gist'),
+    )
+
 class Stop(Base):
     __tablename__ = "stops"
 
@@ -22,6 +26,10 @@ class Stop(Base):
     geom = Column(Geometry(geometry_type='POINT', srid=4326), nullable=False)
 
     route = relationship("Route", back_populates="stops")
+
+    __table_args__ = (
+        Index('idx_stops_geom_gist', 'geom', postgresql_using='gist'),
+    )
 
 class BusPosition(Base):
     """Historial de posiciones GPS de los buses."""
@@ -36,4 +44,5 @@ class BusPosition(Base):
 
     __table_args__ = (
         Index('idx_bus_positions_bus_time', 'bus_id', 'recorded_at'),
+        Index('idx_bus_positions_geom_gist', 'geom', postgresql_using='gist'),
     )

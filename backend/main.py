@@ -219,7 +219,7 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Rate limiting
@@ -315,6 +315,8 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 # --- GPS Payload ---
+BUS_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.]{1,100}$')
+
 class GPSPayload(BaseModel):
     bus_id: str
     lat: float
@@ -331,6 +333,12 @@ class GPSPayload(BaseModel):
     @classmethod
     def validate_lon(cls, v): 
         if not -180 <= v <= 180: raise ValueError('Longitud inválida')
+        return v
+    @field_validator('bus_id')
+    @classmethod
+    def validate_bus_id(cls, v):
+        if not BUS_ID_PATTERN.match(v):
+            raise ValueError('bus_id inválido: solo letras, números, _ - . (máx 100 caracteres)')
         return v
 
 @app.post("/api/gps/update")
@@ -586,7 +594,7 @@ RECORDED_ROUTES_DIR.mkdir(parents=True, exist_ok=True, mode=0o755)
 @app.post("/api/routes/upload")
 async def upload_recorded_route(
     _auth: None = Depends(verify_api_key),
-    gpx_file: UploadFile = File(...),
+    gpx_file: UploadFile = File(..., max_size=10 * 1024 * 1024),  # 10 MB máximo
     stops_json: str = Form(...),
     company: str = Form(default=""),
     route_name: str = Form(...),
