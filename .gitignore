@@ -47,3 +47,8 @@ backups/
 
 # ==== Rutas grabadas auto-ingestadas (no versionar) ====
 backend/data/recorded_routes/
+
+# ==== Datos de producción / archivos semilla GPX/JSON (no versionar) ====
+backend/data/*.gpx
+backend/data/*.json
+backend/data/*.geojson

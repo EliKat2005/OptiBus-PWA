@@ -124,7 +124,7 @@ services:
     image: docker.io/prom/prometheus:v2.55.1
     container_name: optibus_prometheus
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:z
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:z
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -161,7 +161,7 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=false
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:z
+      - ./config/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:z
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
