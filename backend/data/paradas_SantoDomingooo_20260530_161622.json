@@ -1,0 +1,44 @@
+[
+  {
+    "name": "Parada Universidad Católica",
+    "lat": 0.3465474,
+    "lon": -78.10698438,
+    "elevation": 2240.653076171875,
+    "time": "2026-05-30T15:23:56Z"
+  },
+  {
+    "name": "Parada La Victoria",
+    "lat": 0.34680762,
+    "lon": -78.10961666,
+    "elevation": 2244.419189453125,
+    "time": "2026-05-30T15:27:37Z"
+  },
+  {
+    "name": "Parada Rubik's",
+    "lat": 0.35173287,
+    "lon": -78.11035544,
+    "elevation": 2232.529296875,
+    "time": "2026-05-30T15:38:54Z"
+  },
+  {
+    "name": "Parada Universidad Técnica del Norte",
+    "lat": 0.35777262,
+    "lon": -78.11028083,
+    "elevation": 2236.91259765625,
+    "time": "2026-05-30T15:40:52Z"
+  },
+  {
+    "name": "Parada 5",
+    "lat": 0.36155547,
+    "lon": -78.11201108,
+    "elevation": 2225.2265625,
+    "time": "2026-05-30T15:44:17Z"
+  },
+  {
+    "name": "Parada Estadio Olímpico",
+    "lat": 0.36130311,
+    "lon": -78.11942718,
+    "elevation": 2225.898681640625,
+    "time": "2026-05-30T16:16:21Z"
+  }
+]

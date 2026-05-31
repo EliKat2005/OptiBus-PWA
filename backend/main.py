@@ -25,6 +25,7 @@ import math
 import gpxpy
 import aiofiles
 from pathlib import Path
+from gps_cleaner import clean_gps_track
 
 # --- Logging estructurado ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -610,17 +611,32 @@ async def upload_recorded_route(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error parseando GPX: {e}")
     
-    points = []
+    # Extraer puntos como (lat, lon, iso_time) para limpieza
+    raw_points = []
     for track in gpx.tracks:
         for segment in track.segments:
             for point in segment.points:
-                points.append(f"{point.longitude} {point.latitude}")
+                iso_time = point.time.isoformat() + "Z" if point.time else ""
+                raw_points.append((point.latitude, point.longitude, iso_time))
     
-    if len(points) < 2:
+    if len(raw_points) < 2:
         raise HTTPException(status_code=400, detail="Se requieren al menos 2 puntos GPS")
     
-    # Insertar ruta en PostGIS
-    linestring_wkt = f"SRID=4326;LINESTRING({', '.join(points)})"
+    # Limpiar y filtrar outliers usando gps_cleaner
+    cleaned_points = clean_gps_track(raw_points)
+    removed = len(raw_points) - len(cleaned_points)
+    if removed > 0:
+        logger.info(f"GPS cleaner eliminó {removed} de {len(raw_points)} puntos (outliers/ruido)")
+    
+    if len(cleaned_points) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Después de limpiar solo quedaron {len(cleaned_points)} puntos. La ruta tiene demasiado ruido GPS."
+        )
+    
+    # Convertir puntos limpios a WKT LINESTRING
+    wkt_coords = [f"{lon} {lat}" for lat, lon, _ in cleaned_points]
+    linestring_wkt = f"SRID=4326;LINESTRING({', '.join(wkt_coords)})"
     new_route = models.Route(name=safe_route_name, geom=linestring_wkt)
     db.add(new_route)
     await db.flush()  # Obtener el ID generado
@@ -654,13 +670,17 @@ async def upload_recorded_route(
     async with aiofiles.open(gpx_path, "wb") as f:
         await f.write(gpx_content)
     
+    total_points = len(cleaned_points)
+    
     # Guardar metadatos JSON
     meta_path = RECORDED_ROUTES_DIR / f"{base_filename}_meta.json"
     meta = {
         "route_name": safe_route_name,
         "company": company,
         "tags": [t.strip() for t in tags.split(",") if t.strip()],
-        "points_count": len(points),
+        "points_raw": len(raw_points),
+        "points_clean": total_points,
+        "outliers_removed": removed,
         "stops_count": stops_count,
         "recorded_at": datetime.now(timezone.utc).isoformat(),
         "route_id": new_route.id
@@ -668,13 +688,14 @@ async def upload_recorded_route(
     async with aiofiles.open(meta_path, "w") as f:
         await f.write(json.dumps(meta, indent=2, ensure_ascii=False))
     
-    logger.info(f"Ruta '{safe_route_name}' subida: {len(points)} puntos, {stops_count} paradas (ID: {new_route.id})")
+    logger.info(f"Ruta '{safe_route_name}' subida: {total_points} puntos limpios, {stops_count} paradas (ID: {new_route.id}) - {removed} outliers eliminados")
     
     return {
         "status": "success",
         "route_id": new_route.id,
         "route_name": safe_route_name,
-        "points": len(points),
+        "points_cleaned": total_points,
+        "outliers_removed": removed,
         "stops": stops_count,
         "saved_files": [
             str(gpx_path.relative_to(Path(__file__).parent)),
