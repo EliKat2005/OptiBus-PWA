@@ -1,8 +1,24 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Index
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Index, Boolean
 from geoalchemy2 import Geometry
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime, timezone
+
+class Driver(Base):
+    """Conductores y administradores con autenticación JWT."""
+    __tablename__ = "drivers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=True)
+    password_hash = Column(String(255), nullable=True)
+    name = Column(String(100), nullable=False)
+    bus_id = Column(String(50), nullable=False, default="Bus-1")
+    company = Column(String(100), nullable=True)
+    role = Column(String(20), default="driver", index=True)
+    reset_token = Column(String(64), nullable=True)
+    reset_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class Route(Base):
     __tablename__ = "routes"

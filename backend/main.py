@@ -19,7 +19,9 @@ import os
 import time
 import re
 from collections import defaultdict
-from secrets import compare_digest
+from secrets import compare_digest, token_urlsafe
+import hashlib
+import jwt as pyjwt
 from datetime import datetime, timezone, timedelta
 import redis.asyncio as aioredis
 import math
@@ -92,20 +94,122 @@ else:
 security = HTTPBearer(auto_error=False)
 
 async def verify_api_key(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
+    """Verifica API Key estática O JWT. El que pase primero."""
     if not API_KEY_ENABLED:
         return True
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API Key requerida. Usa Authorization: Bearer <key>",
+            detail="API Key o JWT requerido. Usa Authorization: Bearer <token>",
         )
-    if not compare_digest(credentials.credentials, OPTIBUS_API_KEY):
-        logger.warning(f"Intento de acceso con API Key inválida: {credentials.credentials[:4]}...")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API Key inválida",
+    token = credentials.credentials
+    
+    # Intento 1: API Key estática (admin)
+    if compare_digest(token, OPTIBUS_API_KEY):
+        return {"auth_type": "api_key", "role": "admin"}
+    
+    # Intento 2: JWT (conductor/admin)
+    try:
+        payload = decode_jwt_token(token)
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido: no es access_token")
+        return payload  # {"auth_type": "jwt", "sub": driver_id, "bus_id": "...", "role": "..."}
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expirado. Usa /api/auth/refresh")
+    except pyjwt.InvalidTokenError:
+        pass
+    
+    logger.warning(f"Intento de acceso con token inválido: {token[:10]}...")
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
+
+# ──────────────────────────────────────────────
+# JWT Authentication (DevSecOps)
+# ──────────────────────────────────────────────
+JWT_SECRET = os.getenv("JWT_SECRET", OPTIBUS_API_KEY or token_urlsafe(32))
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
+REFRESH_TOKEN_EXPIRE_DAYS = 30
+
+def hash_password(password: str) -> str:
+    """Hash SHA-256 simple con salt. En producción usar bcrypt/passlib."""
+    salt = token_urlsafe(16)
+    hashed = hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
+    return f"{salt}:{hashed}"
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verifica contraseña contra hash almacenado."""
+    try:
+        salt, hashed = password_hash.split(":", 1)
+        return compare_digest(
+            hashlib.sha256(f"{salt}:{password}".encode()).hexdigest(),
+            hashed
         )
-    return True
+    except (ValueError, AttributeError):
+        return False
+
+def create_jwt_token(driver_id: int, bus_id: str, role: str, token_type: str = "access") -> str:
+    """Genera un JWT firmado."""
+    now = datetime.now(timezone.utc)
+    if token_type == "access":
+        expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    else:
+        expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    
+    payload = {
+        "sub": driver_id,
+        "bus_id": bus_id,
+        "role": role,
+        "type": token_type,
+        "iat": now,
+        "exp": expire
+    }
+    return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def decode_jwt_token(token: str) -> dict:
+    """Decodifica y valida un JWT. Lanza excepción si es inválido."""
+    return pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM], options={"require": ["exp", "sub", "type"]})
+
+# ── Modelos Pydantic para Auth ──
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if '@' not in v or len(v) > 255:
+            raise ValueError('Email inválido')
+        return v.strip().lower()
+
+class RegisterDriverRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+    bus_id: str = "Bus-1"
+    company: str = ""
+    role: str = "driver"
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if '@' not in v or len(v) > 255:
+            raise ValueError('Email inválido')
+        return v.strip().lower()
+    @field_validator('bus_id')
+    @classmethod
+    def validate_bus_id(cls, v):
+        if not BUS_ID_PATTERN.match(v):
+            raise ValueError('bus_id inválido')
+        return v
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+class AdminResetPasswordRequest(BaseModel):
+    driver_id: int
+    new_password: str
 
 # Manejador de conexiones WebSocket con logging
 class ConnectionManager:
@@ -537,6 +641,200 @@ async def admin_dashboard(_auth: None = Depends(verify_api_key)):
 @app.get("/api/auth/status")
 async def auth_status(_auth: None = Depends(verify_api_key)):
     return {"api_key_enabled": API_KEY_ENABLED, "version": "0.4.0"}
+
+# ──────────────────────────────────────────────
+# Autenticación JWT (DevSecOps v3.0)
+# ──────────────────────────────────────────────
+
+@app.post("/api/auth/login")
+async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
+    """Inicia sesión con email + password. Retorna access_token + refresh_token + perfil."""
+    result = await db.execute(
+        select(models.Driver).where(
+            and_(models.Driver.email == request.email, models.Driver.is_active == True)
+        )
+    )
+    driver = result.scalar_one_or_none()
+    if not driver or not driver.password_hash:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas")
+    if not verify_password(request.password, driver.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas")
+
+    access_token = create_jwt_token(driver.id, driver.bus_id, driver.role, "access")
+    refresh_token = create_jwt_token(driver.id, driver.bus_id, driver.role, "refresh")
+
+    logger.info(f"Login exitoso: {driver.email} (role={driver.role}, bus={driver.bus_id})")
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in_minutes": ACCESS_TOKEN_EXPIRE_MINUTES,
+        "driver": {
+            "id": driver.id,
+            "name": driver.name,
+            "email": driver.email,
+            "bus_id": driver.bus_id,
+            "company": driver.company,
+            "role": driver.role
+        }
+    }
+
+@app.post("/api/auth/refresh")
+async def refresh_token(_auth: None = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
+    """Refresca el access_token usando un refresh_token válido."""
+    # verify_api_key ya decodificó el JWT. Solo refresh tokens pueden pasar.
+    payload = _auth
+    if isinstance(payload, dict) and payload.get("type") == "refresh":
+        driver_id = payload["sub"]
+        result = await db.execute(select(models.Driver).where(models.Driver.id == driver_id))
+        driver = result.scalar_one_or_none()
+        if not driver or not driver.is_active:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Conductor no encontrado o inactivo")
+        
+        access_token = create_jwt_token(driver.id, driver.bus_id, driver.role, "access")
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in_minutes": ACCESS_TOKEN_EXPIRE_MINUTES
+        }
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Se requiere refresh_token (no access_token)")
+
+@app.post("/api/auth/register")
+async def register_driver(
+    request: RegisterDriverRequest,
+    _auth: None = Depends(verify_api_key),
+    db: AsyncSession = Depends(get_db)
+):
+    """Admin registra un nuevo conductor. Requiere API Key o JWT admin."""
+    auth = _auth
+    if isinstance(auth, dict) and auth.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo administradores pueden registrar conductores")
+    
+    existing = await db.execute(select(models.Driver).where(models.Driver.email == request.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El email ya está registrado")
+    
+    driver = models.Driver(
+        email=request.email,
+        password_hash=hash_password(request.password),
+        name=request.name,
+        bus_id=request.bus_id,
+        company=request.company,
+        role=request.role if auth.get("auth_type") == "api_key" else "driver"
+    )
+    db.add(driver)
+    await db.commit()
+    await db.refresh(driver)
+    
+    logger.info(f"Nuevo conductor registrado: {driver.email} (ID={driver.id}, bus={driver.bus_id})")
+    return {
+        "status": "created",
+        "driver": {
+            "id": driver.id,
+            "name": driver.name,
+            "email": driver.email,
+            "bus_id": driver.bus_id,
+            "company": driver.company,
+            "role": driver.role
+        }
+    }
+
+@app.post("/api/auth/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Solicita recuperación de contraseña. El admin ve el token en el dashboard."""
+    result = await db.execute(
+        select(models.Driver).where(
+            and_(models.Driver.email == request.email, models.Driver.is_active == True)
+        )
+    )
+    driver = result.scalar_one_or_none()
+    if not driver:
+        # No revelar si el email existe
+        return {"status": "ok", "message": "Si el email está registrado, el administrador recibirá la solicitud de recuperación."}
+    
+    reset_token = token_urlsafe(32)
+    driver.reset_token = hashlib.sha256(reset_token.encode()).hexdigest()
+    driver.reset_token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    await db.commit()
+    
+    logger.info(f"Solicitud de recuperación: {driver.email} (token expira en 1h)")
+    return {
+        "status": "ok",
+        "message": "El administrador ha sido notificado. Contacta al admin para completar la recuperación.",
+        "reset_token_admin": reset_token if isinstance(_auth, dict) and _auth.get("role") == "admin" else "[SOLO VISIBLE PARA ADMIN]"
+    }
+
+@app.post("/api/auth/reset-password")
+async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Completa la recuperación de contraseña con el reset_token (entregado por el admin)."""
+    token_hash = hashlib.sha256(request.token.encode()).hexdigest()
+    result = await db.execute(
+        select(models.Driver).where(
+            and_(
+                models.Driver.reset_token == token_hash,
+                models.Driver.reset_token_expires_at > datetime.now(timezone.utc),
+                models.Driver.is_active == True
+            )
+        )
+    )
+    driver = result.scalar_one_or_none()
+    if not driver:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token inválido o expirado")
+    
+    driver.password_hash = hash_password(request.new_password)
+    driver.reset_token = None
+    driver.reset_token_expires_at = None
+    await db.commit()
+    
+    logger.info(f"Contraseña reseteada para: {driver.email}")
+    return {"status": "ok", "message": "Contraseña actualizada exitosamente"}
+
+@app.post("/api/auth/admin-reset-password")
+async def admin_reset_password(
+    request: AdminResetPasswordRequest,
+    _auth: None = Depends(verify_api_key),
+    db: AsyncSession = Depends(get_db)
+):
+    """Admin asigna una nueva contraseña a un conductor directamente."""
+    auth = _auth
+    if isinstance(auth, dict) and auth.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo administradores")
+    
+    result = await db.execute(select(models.Driver).where(models.Driver.id == request.driver_id))
+    driver = result.scalar_one_or_none()
+    if not driver:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conductor no encontrado")
+    
+    driver.password_hash = hash_password(request.new_password)
+    driver.reset_token = None
+    driver.reset_token_expires_at = None
+    await db.commit()
+    
+    logger.info(f"Admin reseteó contraseña de: {driver.email}")
+    return {"status": "ok", "message": f"Contraseña actualizada para {driver.name}"}
+
+@app.get("/api/auth/me")
+async def get_me(_auth: None = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
+    """Retorna el perfil del usuario autenticado (JWT)."""
+    payload = _auth
+    if isinstance(payload, dict) and payload.get("auth_type") == "jwt":
+        driver_id = payload["sub"]
+        result = await db.execute(select(models.Driver).where(models.Driver.id == driver_id))
+        driver = result.scalar_one_or_none()
+        if driver:
+            return {
+                "id": driver.id,
+                "name": driver.name,
+                "email": driver.email,
+                "bus_id": driver.bus_id,
+                "company": driver.company,
+                "role": driver.role,
+                "is_active": driver.is_active,
+                "created_at": driver.created_at.isoformat() if driver.created_at else None
+            }
+    elif isinstance(payload, dict) and payload.get("auth_type") == "api_key":
+        return {"role": "admin", "auth_type": "api_key", "message": "Autenticado como administrador vía API Key"}
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autenticado")
 
 # --- Geocerca / Alerta de desvío ---
 @app.get("/api/alert/geofence")
