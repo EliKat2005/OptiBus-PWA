@@ -20,14 +20,21 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.optibus.driver"
-    compileSdk = 34
+    compileSdk = 35
+
+    buildFeatures {
+        buildConfig = true
+    }
 
     defaultConfig {
         applicationId = "com.optibus.driver"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 3
-        versionName = "2.1"
+        targetSdk = 35
+        versionCode = 4
+        versionName = "2.2"
+
+        // DevSecOps: Variable de build para controlar logs solo en debug
+        buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://ecae.me\"")
     }
 
     signingConfigs {
@@ -63,10 +70,13 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.10.0")
-    
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+
     // OkHttp para conectar con los WebSockets de FastAPI
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // DevSecOps: EncryptedSharedPreferences para proteger API Key y credenciales
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }

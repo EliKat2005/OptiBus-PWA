@@ -54,6 +54,7 @@ class RouteRecorderService : Service(), LocationListener {
         const val EXTRA_TAGS = "tags"
         const val EXTRA_SERVER_URL = "server_url"
         const val EXTRA_API_KEY = "api_key"
+        const val EXTRA_BUS_ID = "bus_id"
         const val EXTRA_STOP_NAME = "stop_name"
         const val EXTRA_POINT_COUNT = "point_count"
         const val EXTRA_STOP_COUNT = "stop_count"
@@ -72,6 +73,7 @@ class RouteRecorderService : Service(), LocationListener {
     private var tags: String = ""
     private var serverUrl: String = ""
     private var apiKey: String = ""
+    private var busId: String = "Bus-1"
 
     private val gpsPoints = mutableListOf<GpsPoint>()
     private val stops = mutableListOf<StopPoint>()
@@ -113,6 +115,7 @@ class RouteRecorderService : Service(), LocationListener {
                 tags = intent.getStringExtra(EXTRA_TAGS) ?: ""
                 serverUrl = intent.getStringExtra(EXTRA_SERVER_URL) ?: ""
                 apiKey = intent.getStringExtra(EXTRA_API_KEY) ?: ""
+                busId = intent.getStringExtra(EXTRA_BUS_ID) ?: "Bus-1"
                 startRecording()
             }
             ACTION_PAUSE_RECORDING -> pauseRecording()
@@ -139,7 +142,7 @@ class RouteRecorderService : Service(), LocationListener {
 
         val notification = buildNotification(
             "Grabando: $routeName",
-            "Compania: $company. Puntos: 0"
+            "Bus: $busId. Puntos: 0"
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -184,7 +187,7 @@ class RouteRecorderService : Service(), LocationListener {
                     onLocationChanged(it)
                 }
 
-                Log.i(TAG, "GPS alta precision iniciado: ${GPS_INTERVAL_MS}ms (GPS + Network)")
+                Log.i(TAG, "GPS alta precision iniciado: ${GPS_INTERVAL_MS}ms (GPS + Network) - Bus: $busId")
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "Permiso de ubicacion denegado", e)
@@ -213,7 +216,7 @@ class RouteRecorderService : Service(), LocationListener {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(NOTIFICATION_ID, notification)
 
-        Log.i(TAG, "Grabacion pausada: $pointCounter puntos")
+        if (BuildConfig.DEBUG) Log.i(TAG, "Grabacion pausada: $pointCounter puntos")
         sendStatsBroadcast()
     }
 
@@ -231,7 +234,7 @@ class RouteRecorderService : Service(), LocationListener {
                     GPS_MIN_DISTANCE_M,
                     this
                 )
-                Log.i(TAG, "Grabacion reanudada")
+                if (BuildConfig.DEBUG) Log.i(TAG, "Grabacion reanudada")
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "Error reanudando GPS", e)
@@ -280,7 +283,9 @@ class RouteRecorderService : Service(), LocationListener {
             sendStatsBroadcast()
         }
 
-        Log.d(TAG, "Punto #$pointCounter: ${location.latitude}, ${location.longitude} (precision: ${location.accuracy}m)")
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, "Punto #$pointCounter: ${location.latitude}, ${location.longitude} (precision: ${location.accuracy}m)")
+        }
     }
 
     fun registerStop(stopName: String) {
@@ -392,7 +397,7 @@ class RouteRecorderService : Service(), LocationListener {
         val filesStr = exportedFiles.joinToString("\n")
         val doneNotification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Grabacion Finalizada")
-            .setContentText("$pointCounter puntos, ${stops.size} paradas")
+            .setContentText("$pointCounter puntos, ${stops.size} paradas (Bus: $busId)")
             .setStyle(NotificationCompat.BigTextStyle().bigText(filesStr))
             .setSmallIcon(android.R.drawable.ic_menu_save)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -507,7 +512,7 @@ class RouteRecorderService : Service(), LocationListener {
     private fun writeGpx(file: File) {
         FileWriter(file).use { writer ->
             writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-            writer.write("<gpx version=\"1.1\" creator=\"OptiBus Driver App v2.0\"\n")
+            writer.write("<gpx version=\"1.1\" creator=\"OptiBus Driver App v2.2\"\n")
             writer.write("     xmlns=\"http://www.topografix.com/GPX/1/1\"\n")
             writer.write("     xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n")
             writer.write("     xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd\">\n")
@@ -517,7 +522,7 @@ class RouteRecorderService : Service(), LocationListener {
             writer.write("</name>\n")
             writer.write("    <desc>Compania: ")
             writer.write(escapeXml(company))
-            writer.write(" | Tags: ")
+            writer.write(" | Bus: $busId | Tags: ")
             writer.write(escapeXml(tags))
             writer.write("</desc>\n")
             writer.write("  </metadata>\n")
@@ -551,6 +556,9 @@ class RouteRecorderService : Service(), LocationListener {
         ).format(Date())
 
         sb.appendLine("{")
+        sb.append("  \"bus_id\": \"")
+        sb.append(escapeJson(busId))
+        sb.appendLine("\",")
         sb.append("  \"company\": \"")
         sb.append(escapeJson(company))
         sb.appendLine("\",")

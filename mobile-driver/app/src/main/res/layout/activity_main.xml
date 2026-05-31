@@ -120,6 +120,18 @@
             android:layout_marginBottom="10dp"
             android:elevation="1dp"/>
 
+        <EditText
+            android:id="@+id/etBusId"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="ID del Bus (Ej. Bus-1, U-245)"
+            android:inputType="text"
+            android:maxLength="50"
+            android:background="#FFFFFF"
+            android:padding="12dp"
+            android:layout_marginBottom="10dp"
+            android:elevation="1dp"/>
+
         <!-- Divisor -->
         <View
             android:layout_width="match_parent"

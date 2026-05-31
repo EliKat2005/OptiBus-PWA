@@ -3,7 +3,7 @@ FROM docker.io/library/ubuntu:22.04
 
 # Variables de entorno para Android SDK
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
-ENV PATH=${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools:${ANDROID_SDK_ROOT}/build-tools/34.0.0
+ENV PATH=${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools:${ANDROID_SDK_ROOT}/build-tools/35.0.0
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Instalar dependencias necesarias (Java 17, wget, unzip, git)
@@ -21,9 +21,9 @@ RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
     mv ${ANDROID_SDK_ROOT}/cmdline-tools/cmdline-tools ${ANDROID_SDK_ROOT}/cmdline-tools/latest && \
     rm android_tools.zip
 
-# Aceptar licencias e instalar Build Tools y Platform
+# Aceptar licencias e instalar Build Tools y Platform (SDK 35)
 RUN yes | sdkmanager --licenses > /dev/null && \
-    sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "build-tools;33.0.1" && \
+    sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" && \
     chmod -R 777 /opt/android-sdk
 
 # Crear usuario sin privilegios para realizar el build

@@ -18,6 +18,8 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKeys
 
 class MainActivity : Activity() {
 
@@ -32,6 +34,9 @@ class MainActivity : Activity() {
     // UI - Servidor y API Key
     private lateinit var etServerUrl: EditText
     private lateinit var etApiKey: EditText
+
+    // UI - ID del Bus (nuevo v2.2)
+    private lateinit var etBusId: EditText
 
     // UI - Grabación
     private lateinit var llStats: LinearLayout
@@ -91,7 +96,7 @@ class MainActivity : Activity() {
                 RouteRecorderService.BROADCAST_EXPORT_DONE -> {
                     val points = intent.getIntExtra(RouteRecorderService.EXTRA_POINT_COUNT, 0)
                     val stops = intent.getIntExtra(RouteRecorderService.EXTRA_STOP_COUNT, 0)
-                    val _ = intent.getStringExtra(RouteRecorderService.EXTRA_EXPORT_FILES) ?: ""
+                    intent.getStringExtra(RouteRecorderService.EXTRA_EXPORT_FILES) ?: ""
 
                     runOnUiThread {
                         isRecording = false
@@ -123,7 +128,20 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        prefs = getSharedPreferences("OptiBusPrefs", Context.MODE_PRIVATE)
+        // DevSecOps: EncryptedSharedPreferences para API Key, server URL, bus ID
+        prefs = try {
+            val masterKey = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+            EncryptedSharedPreferences.create(
+                "OptiBusSecurePrefs",
+                masterKey,
+                this,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("OptiBus", "EncryptedSharedPreferences falló, usando respaldo sin cifrar", e)
+            getSharedPreferences("OptiBusPrefs", Context.MODE_PRIVATE)
+        }
 
         // Binding de vistas
         etCompany = findViewById(R.id.etCompany)
@@ -131,6 +149,7 @@ class MainActivity : Activity() {
         etTags = findViewById(R.id.etTags)
         etServerUrl = findViewById(R.id.etServerUrl)
         etApiKey = findViewById(R.id.etApiKey)
+        etBusId = findViewById(R.id.etBusId)
 
         llStats = findViewById(R.id.llStats)
         tvPointCount = findViewById(R.id.tvPointCount)
@@ -173,8 +192,9 @@ class MainActivity : Activity() {
         etCompany.setText(prefs.getString("company", ""))
         etRouteName.setText(prefs.getString("route_name", ""))
         etTags.setText(prefs.getString("tags", ""))
-        etServerUrl.setText(prefs.getString("server_url", "https://ecae.me"))
+        etServerUrl.setText(prefs.getString("server_url", BuildConfig.DEFAULT_SERVER_URL))
         etApiKey.setText(prefs.getString("api_key", ""))
+        etBusId.setText(prefs.getString("bus_id", "Bus-1"))
         etServerIp.setText(prefs.getString("server_ip", "192.168.1.12:8000"))
     }
 
@@ -185,6 +205,7 @@ class MainActivity : Activity() {
             .putString("tags", etTags.text.toString().trim())
             .putString("server_url", etServerUrl.text.toString().trim())
             .putString("api_key", etApiKey.text.toString().trim())
+            .putString("bus_id", etBusId.text.toString().trim())
             .apply()
     }
 
@@ -200,6 +221,7 @@ class MainActivity : Activity() {
         etTags.addTextChangedListener(textWatcher)
         etServerUrl.addTextChangedListener(textWatcher)
         etApiKey.addTextChangedListener(textWatcher)
+        etBusId.addTextChangedListener(textWatcher)
 
         // Botón Iniciar Grabación
         btnRecord.setOnClickListener {
@@ -253,6 +275,7 @@ class MainActivity : Activity() {
         val tags = etTags.text.toString().trim()
         val serverUrl = etServerUrl.text.toString().trim()
         val apiKey = etApiKey.text.toString().trim()
+        val busId = etBusId.text.toString().trim().ifEmpty { "Bus-1" }
 
         if (routeName.isEmpty()) {
             Toast.makeText(this, "Ingresa un nombre de ruta antes de grabar", Toast.LENGTH_LONG).show()
@@ -275,6 +298,7 @@ class MainActivity : Activity() {
             putExtra(RouteRecorderService.EXTRA_TAGS, tags)
             putExtra(RouteRecorderService.EXTRA_SERVER_URL, serverUrl)
             putExtra(RouteRecorderService.EXTRA_API_KEY, apiKey)
+            putExtra(RouteRecorderService.EXTRA_BUS_ID, busId)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -283,7 +307,7 @@ class MainActivity : Activity() {
             startService(serviceIntent)
         }
 
-        Toast.makeText(this, "Grabación iniciada: $routeName (GPS 1s)", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Grabación iniciada: $routeName ($busId - GPS 1s)", Toast.LENGTH_SHORT).show()
     }
 
     private fun pauseRecording() {
@@ -376,6 +400,7 @@ class MainActivity : Activity() {
             etTags.isEnabled = false
             etServerUrl.isEnabled = false
             etApiKey.isEnabled = false
+            etBusId.isEnabled = false
         } else {
             llStats.visibility = View.GONE
             btnRecord.visibility = View.VISIBLE
@@ -391,6 +416,7 @@ class MainActivity : Activity() {
             etTags.isEnabled = true
             etServerUrl.isEnabled = true
             etApiKey.isEnabled = true
+            etBusId.isEnabled = true
         }
     }
 
@@ -398,10 +424,12 @@ class MainActivity : Activity() {
 
     private fun startTransmission() {
         val ip = etServerIp.text.toString().trim()
-        prefs.edit().putString("server_ip", ip).apply()
+        val busId = etBusId.text.toString().trim().ifEmpty { "Bus-1" }
+        prefs.edit().putString("server_ip", ip).putString("bus_id", busId).apply()
 
         val serviceIntent = Intent(this, LocationForegroundService::class.java)
         serviceIntent.putExtra("SERVER_IP", ip)
+        serviceIntent.putExtra("BUS_ID", busId)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
@@ -410,7 +438,7 @@ class MainActivity : Activity() {
         }
 
         isTransmitting = true
-        tvServerStatus.text = "Servidor: Conectado a $ip"
+        tvServerStatus.text = "Servidor: Conectado a $ip (Bus: $busId)"
         tvServerStatus.setTextColor(android.graphics.Color.parseColor("#2E7D32"))
         tvServerStatus.setBackgroundColor(android.graphics.Color.parseColor("#E8F5E9"))
 
@@ -451,7 +479,6 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
-        // Android 11+: pedir MANAGE_EXTERNAL_STORAGE si es necesario
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)

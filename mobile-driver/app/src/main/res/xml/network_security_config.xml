@@ -10,8 +10,22 @@
         </trust-anchors>
     </base-config>
 
+    <!-- Dominio de producción: forzar TLS y aplicar Certificate Pinning -->
+    <domain-config>
+        <domain includeSubdomains="true">ecae.me</domain>
+        <trust-anchors>
+            <!-- Solo confiar en CAs del sistema para este dominio -->
+            <certificates src="system" />
+        </trust-anchors>
+        <!-- Certificate Pinning: Let's Encrypt ISRG Root X1 (activa hasta 2035) -->
+        <pin-set>
+            <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
+            <!-- Backup pin: Let's Encrypt R3 -->
+            <pin digest="SHA-256">jQJTbIh0grw0u1v48tCX6zmOQ5QYmk1hM4Ag4nWiC/k=</pin>
+        </pin-set>
+    </domain-config>
+
     <!-- Excepción: permitir cleartext solo en redes locales para desarrollo -->
-    <!-- En producción en Azure, esto no aplica porque se usa wss:// -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">10.0.0.0/8</domain>
         <domain includeSubdomains="false">172.16.0.0/12</domain>

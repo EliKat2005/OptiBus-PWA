@@ -12,7 +12,9 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import okhttp3.*
 import okhttp3.CertificatePinner
@@ -25,8 +27,15 @@ class LocationForegroundService : Service(), LocationListener {
     private val NOTIFICATION_ID = 1
     private lateinit var locationManager: LocationManager
     private var webSocket: WebSocket? = null
-    // Optimización: Intervalo inicial a 3 segundos
     private var currentInterval: Long = 3000L
+    private var busId = "Bus-Conductor-1"
+    private var serverIp = "192.168.1.12:8000"
+
+    // DevSecOps: Reconexión WebSocket con backoff exponencial
+    private val handler = Handler(Looper.getMainLooper())
+    private var reconnectDelay = 1000L
+    private val maxReconnectDelay = 30_000L
+    private var reconnectAttempts = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -35,14 +44,18 @@ class LocationForegroundService : Service(), LocationListener {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val serverIp = intent?.getStringExtra("SERVER_IP") ?: "192.168.1.12:8000"
+        serverIp = intent?.getStringExtra("SERVER_IP") ?: "192.168.1.12:8000"
+        busId = intent?.getStringExtra("BUS_ID") ?: "Bus-Conductor-1"
+
         // Reiniciamos websocket si cambia / arranca
+        reconnectAttempts = 0
+        reconnectDelay = 1000L
         initWebSocket(serverIp)
 
         val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("OptiBus Conductor")
-                .setContentText("Transmitiendo a $serverIp")
+                .setContentText("Transmitiendo a $serverIp (Bus: $busId)")
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .build()
         } else {
@@ -74,7 +87,7 @@ class LocationForegroundService : Service(), LocationListener {
             locationManager.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,
                 currentInterval,
-                0f, // 0 metros para asegurar que actualice aunque estés quieto en el asiento
+                0f,
                 this
             )
             
@@ -107,7 +120,9 @@ class LocationForegroundService : Service(), LocationListener {
             else -> "$protocol://$serverIp/ws"
         }
         
-        Log.i("OptiBus", "Conectando WebSocket a $url (local=$isLocalIp, protocol=$protocol)")
+        if (BuildConfig.DEBUG) {
+            Log.i("OptiBus", "Conectando WebSocket a $url (local=$isLocalIp, protocol=$protocol)")
+        }
         
         // DevSecOps: OkHttpClient con Certificate Pinning para conexiones no locales
         val clientBuilder = OkHttpClient.Builder()
@@ -123,7 +138,6 @@ class LocationForegroundService : Service(), LocationListener {
             if (!pinSha256.isNullOrEmpty()) {
                 val certificatePinner = CertificatePinner.Builder()
                     .add(hostname, "sha256/$pinSha256")
-                    // Backup pin de Let's Encrypt (opcional, agregar si se requiere)
                     .build()
                 clientBuilder.certificatePinner(certificatePinner)
                 Log.i("OptiBus", "Certificate pinning HABILITADO para $hostname")
@@ -140,28 +154,51 @@ class LocationForegroundService : Service(), LocationListener {
         val apiKey = prefs.getString("api_key", "")?.trim()
         if (!apiKey.isNullOrEmpty()) {
             requestBuilder.addHeader("Authorization", "Bearer $apiKey")
-            Log.d("OptiBus", "API Key configurada para autenticación")
         }
         
         val request = requestBuilder.build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d("OptiBus", "WebSocket Conectado a $url")
+                Log.i("OptiBus", "WebSocket Conectado a $url")
+                // Resetear backoff al conectar exitosamente
+                reconnectAttempts = 0
+                reconnectDelay = 1000L
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e("OptiBus", "Fallo WebSocket en $url", t)
+                Log.e("OptiBus", "Fallo WebSocket en $url (intento #$reconnectAttempts): ${t.message}")
+                scheduleReconnect()
+            }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.i("OptiBus", "WebSocket cerrado (code=$code): $reason")
+                if (code != 1000) {
+                    scheduleReconnect()
+                }
             }
         })
+    }
+
+    // DevSecOps: Reconexión con backoff exponencial
+    private fun scheduleReconnect() {
+        reconnectAttempts++
+        if (reconnectAttempts > 1) {
+            reconnectDelay = (reconnectDelay * 2).coerceAtMost(maxReconnectDelay)
+        }
+        Log.i("OptiBus", "Reconexión WS en ${reconnectDelay}ms (intento #$reconnectAttempts)")
+        handler.postDelayed({
+            initWebSocket(serverIp)
+        }, reconnectDelay)
     }
 
     override fun onLocationChanged(location: Location) {
         // Optimización de Batería: Ajuste dinámico de tasa de refresco
         val speedKmh = location.speed * 3.6f
-        val desiredInterval = if (speedKmh < 5f) 10000L else 3000L // 10s si está en tráfico/parado, 3s si va libre
+        val desiredInterval = if (speedKmh < 5f) 10000L else 3000L
 
         if (desiredInterval != currentInterval) {
             currentInterval = desiredInterval
-            Log.d("OptiBus", "Ajustando intervalo GPS a $currentInterval ms (Velocidad: $speedKmh km/h)")
+            if (BuildConfig.DEBUG) {
+                Log.d("OptiBus", "Ajustando intervalo GPS a $currentInterval ms (Velocidad: $speedKmh km/h)")
+            }
             try {
                 locationManager.removeUpdates(this)
                 startLocationUpdates()
@@ -175,7 +212,7 @@ class LocationForegroundService : Service(), LocationListener {
         json.put("type", "bus_positions")
         
         val busData = JSONObject()
-        busData.put("id", "Bus-Conductor-1")
+        busData.put("id", busId)
         busData.put("line", "Ruta Principal")
         busData.put("lat", location.latitude)
         busData.put("lon", location.longitude)
@@ -186,7 +223,9 @@ class LocationForegroundService : Service(), LocationListener {
 
         // Enviar la coordenada al backend si el WS está instanciado
         webSocket?.send(json.toString())
-        Log.d("OptiBus", "Enviada coord: ${location.latitude}, ${location.longitude}")
+        if (BuildConfig.DEBUG) {
+            Log.d("OptiBus", "Enviada coord: ${location.latitude}, ${location.longitude} (Bus: $busId)")
+        }
     }
 
     private fun createNotificationChannel() {
@@ -203,6 +242,7 @@ class LocationForegroundService : Service(), LocationListener {
 
     override fun onDestroy() {
         super.onDestroy()
+        handler.removeCallbacksAndMessages(null)
         locationManager.removeUpdates(this)
         webSocket?.close(1000, "Servicio finalizado")
     }

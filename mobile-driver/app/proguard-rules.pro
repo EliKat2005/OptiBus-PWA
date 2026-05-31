@@ -18,3 +18,11 @@
 
 # StringEscaper utility
 -keep class com.optibus.driver.StringEscaper { *; }
+
+# AndroidX Security (EncryptedSharedPreferences)
+# Mantener clases de MasterKeys y EncryptedSharedPreferences
+-keep class androidx.security.crypto.** { *; }
+-dontwarn androidx.security.crypto.**
+
+# BuildConfig (usado para logs condicionales y DEFAULT_SERVER_URL)
+-keep class com.optibus.driver.BuildConfig { *; }
