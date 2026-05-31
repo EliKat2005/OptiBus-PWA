@@ -4,11 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
-    <title>OptiBus MVP</title>
+    <title>OptiBus — Transporte en Tiempo Real</title>
     
     <!-- PWA Manifest -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2563eb">
+    <meta name="description" content="Rastreo en tiempo real de autobuses. Rutas, paradas y GPS en vivo.">
     
     <!-- iOS PWA Meta Tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -23,21 +24,32 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Indicador de estado de conexión -->
-    <div id="connection-status" class="connection-lost">
+    <!-- Panel Lateral con lista de rutas y paradas -->
+    <div id="side-panel">
+        <div id="panel-header">
+            <span>OptiBus</span>
+        </div>
+        <div id="routeList">
+            <div class="empty-state">Cargando rutas…</div>
+        </div>
+        <div id="stopList"></div>
+    </div>
+
+    <!-- Botón toggle del panel (mostrar/ocultar) -->
+    <button id="btn-toggle-panel" title="Mostrar / Ocultar panel">☰</button>
+
+    <!-- Indicador de estado de conexión WebSocket -->
+    <div id="connection-status" class="connection-status lost">
         <span id="connection-text">🔴 Sin conexión</span>
     </div>
 
-    <!-- Botón flotante para GPS -->
-    <button id="btn-gps" title="Encontrar mi parada cercana">
-        📍
-    </button>
+    <!-- Botón flotante para GPS (encontrar paradas cercanas) -->
+    <button id="btn-gps" title="Encontrar mi parada cercana">📍</button>
     
     <!-- Botón flotante para recargar app (limpiar caché) -->
-    <button id="btn-refresh" title="Recargar App y limpiar Caché">
-        🔄
-    </button>
+    <button id="btn-refresh" title="Recargar App y limpiar Caché">🔄</button>
     
+    <!-- Mapa Leaflet -->
     <div id="map"></div>
     
     <!-- Leaflet JS -->
@@ -45,8 +57,5 @@
     
     <!-- Lógica de la App -->
     <script src="app.js"></script>
-
-    <!-- Registrar Service Worker para funcionalidad PWA offline -->
-    <!-- El registro se realiza desde app.js (initServiceWorker) para cumplir con CSP sin unsafe-inline -->
 </body>
 </html>

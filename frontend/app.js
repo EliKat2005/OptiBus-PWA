@@ -1,116 +1,401 @@
-// Coordenadas iniciales (Centro de Ibarra)
-const IBARRA_LAT = 0.3517;
-const IBARRA_LON = -78.1223;
+// ======================================================================
+// OptiBus-PWA v0.5.0 — Visualización Profesional de Rutas y Paradas
+// DevSecOps: Coordenadas validadas, escape HTML, límites de marcadores
+// ======================================================================
+
+const CONFIG = {
+    center: [-0.2188, -78.5124],  // Quito, Ecuador (centro país)
+    defaultZoom: 14,
+    maxBusMarkers: 50,
+    routeColors: [
+        '#2563eb', '#dc2626', '#16a34a', '#ca8a04', '#9333ea',
+        '#0891b2', '#e11d48', '#65a30d', '#d97706', '#7c3aed'
+    ],
+    routeOpacity: 0.85,
+    routeWeight: 4,
+    stopIconSize: 28,
+    busIconSize: 36,
+    arrowInterval: 8,  // Flechas direccionales cada N puntos
+};
 
 const API_URL = '';
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const WS_URL = `${wsProtocol}//${window.location.host}/ws`;
 
-// 1. Inicializar mapa de Leaflet
-const map = L.map('map').setView([IBARRA_LAT, IBARRA_LON], 14);
+// ──────────────────────────────────────────────
+// 1. MAPA BASE PROFESIONAL
+// ──────────────────────────────────────────────
+const map = L.map('map', {
+    center: CONFIG.center,
+    zoom: CONFIG.defaultZoom,
+    zoomControl: true,
+    attributionControl: true
+});
 
-// 2. Cargar capa base (OpenStreetMap)
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+// Capa base clara (CartoDB Voyager — estilo moderno minimalista)
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 19,
-    attribution: '© OpenStreetMap - OptiBus MVP'
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a> · OptiBus'
 }).addTo(map);
 
-// Objeto para control de marcadores
-const busMarkers = {};
-const MAX_BUS_MARKERS = 50; // Límite de seguridad para prevenir DoS
+// ──────────────────────────────────────────────
+// 2. GRUPOS DE CAPAS (para toggle)
+// ──────────────────────────────────────────────
+const routeLayers = {};       // { route_id: L.layerGroup }
+const stopMarkers = [];       // [{ marker, route_id }]
+const busMarkers = {};        // { bus_id: L.marker }
+const busTrails = {};         // { bus_id: L.polyline }
+let activeRouteIndex = -1;    // Ruta seleccionada (para highlight)
 
-// Referencia al indicador de conexión
-const connectionStatusEl = document.getElementById('connection-status');
-const connectionTextEl = document.getElementById('connection-text');
+// Panel lateral
+const routeListEl = document.getElementById('routeList');
+const stopListEl = document.getElementById('stopList');
 
-// Timer para ocultar gradualmente el indicador de estado
-let connectionHideTimer = null;
+// ──────────────────────────────────────────────
+// 3. ICONOS PERSONALIZADOS
+// ──────────────────────────────────────────────
 
-function updateConnectionStatus(connected) {
-    if (!connectionStatusEl || !connectionTextEl) return;
-    
-    // Cancelar cualquier timer previo para evitar conflictos
-    if (connectionHideTimer) {
-        clearTimeout(connectionHideTimer);
-        connectionHideTimer = null;
-    }
-    
-    connectionStatusEl.style.opacity = '1';
-
-    if (connected) {
-        connectionStatusEl.className = 'connected';
-        connectionTextEl.textContent = '🟢 Conectado';
-        
-        // Ocultar automáticamente tras 3 segundos
-        connectionHideTimer = setTimeout(() => {
-            connectionStatusEl.style.opacity = '0';
-            connectionHideTimer = null;
-        }, 3000);
-    } else {
-        connectionStatusEl.className = 'connection-lost';
-        connectionTextEl.textContent = '🔴 Sin conexión';
-        
-        // Ocultar gradualmente tras 10s para no molestar permanentemente
-        connectionHideTimer = setTimeout(() => {
-            connectionStatusEl.style.opacity = '0.5';
-            connectionHideTimer = null;
-        }, 10000);
-    }
+// Ícono de parada numerada (DivIcon)
+function createStopIcon(stopNumber, routeColor) {
+    return L.divIcon({
+        className: 'stop-icon',
+        html: `<div class="stop-marker" style="--color: ${routeColor}">
+                 <span class="stop-number">${stopNumber}</span>
+                 <div class="stop-pulse"></div>
+               </div>`,
+        iconSize: [CONFIG.stopIconSize, CONFIG.stopIconSize],
+        iconAnchor: [CONFIG.stopIconSize / 2, CONFIG.stopIconSize / 2],
+        popupAnchor: [0, -CONFIG.stopIconSize / 2]
+    });
 }
 
-// 3. Cargar rutas
+// Ícono de bus (SVG rotado según bearing)
+function createBusIcon(bearing) {
+    const rotation = bearing || 0;
+    return L.divIcon({
+        className: 'bus-icon',
+        html: `<div class="bus-marker" style="transform: rotate(${rotation}deg)">
+                 <svg viewBox="0 0 24 24" width="${CONFIG.busIconSize}" height="${CONFIG.busIconSize}">
+                   <circle cx="12" cy="12" r="10" fill="#2563eb" stroke="#fff" stroke-width="2"/>
+                   <path d="M8 12l3-3M8 12l3 3M8 12h8" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/>
+                 </svg>
+                 <div class="bus-id-label"></div>
+               </div>`,
+        iconSize: [CONFIG.busIconSize, CONFIG.busIconSize + 16],
+        iconAnchor: [CONFIG.busIconSize / 2, CONFIG.busIconSize / 2 + 8],
+        popupAnchor: [0, -CONFIG.busIconSize / 2]
+    });
+}
+
+// ──────────────────────────────────────────────
+// 4. CARGA DE RUTAS (ESTILO PROFESIONAL)
+// ──────────────────────────────────────────────
 async function loadRoutes() {
     try {
         const response = await fetch(`${API_URL}/api/routes`);
-        if (!response.ok) {
-            throw new Error(`Error HTTP: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const geojsonData = await response.json();
-        
-        const routeLayer = L.geoJSON(geojsonData, {
-            style: function (feature) {
-                return { color: "#2563eb", weight: 5, opacity: 0.8 };
-            }
-        }).addTo(map);
-        
-        if (geojsonData.features && geojsonData.features.length > 0) {
-            map.fitBounds(routeLayer.getBounds());
-        }
+        renderRoutes(geojsonData);
     } catch (error) {
-        console.error("Error al cargar rutas estáticas:", error);
+        console.error('Error cargando rutas:', error);
     }
 }
 
-// 4. WebSocket con reconexión exponencial
+function renderRoutes(geojsonData) {
+    routeListEl.innerHTML = '';
+    stopListEl.innerHTML = '';
+
+    if (!geojsonData.features || geojsonData.features.length === 0) {
+        routeListEl.innerHTML = '<div class="empty-state">🚏 Sin rutas configuradas</div>';
+        return;
+    }
+
+    let allBounds = null;
+
+    geojsonData.features.forEach((feature, routeIndex) => {
+        const routeId = feature.properties.id;
+        const routeName = feature.properties.name;
+        const color = CONFIG.routeColors[routeIndex % CONFIG.routeColors.length];
+        const coords = feature.geometry.coordinates;
+
+        if (!coords || coords.length < 2) return;
+
+        // Grupo de capa para esta ruta
+        const layerGroup = L.layerGroup().addTo(map);
+        routeLayers[routeId] = layerGroup;
+
+        // ── Línea exterior (glow / sombra) ──
+        const glowLine = L.polyline(
+            coords.map(c => [c[1], c[0]]),
+            {
+                color: color,
+                weight: CONFIG.routeWeight + 4,
+                opacity: 0.15,
+                smoothFactor: 2,
+                interactive: false
+            }
+        ).addTo(layerGroup);
+
+        // ── Línea principal ──
+        const mainLine = L.polyline(
+            coords.map(c => [c[1], c[0]]),
+            {
+                color: color,
+                weight: CONFIG.routeWeight,
+                opacity: CONFIG.routeOpacity,
+                smoothFactor: 2,
+                dashArray: null,
+                lineCap: 'round',
+                lineJoin: 'round'
+            }
+        ).addTo(layerGroup);
+
+        // ── Flechas direccionales ──
+        for (let i = CONFIG.arrowInterval; i < coords.length - 1; i += CONFIG.arrowInterval) {
+            const p1 = coords[i];
+            const p2 = coords[i + 1];
+            const midLat = (p1[0] + p2[0]) / 2;
+            const midLon = (p1[1] + p2[1]) / 2;
+            const angle = Math.atan2(p2[0] - p1[0], p2[1] - p1[1]) * 180 / Math.PI + 90;
+            
+            L.marker([midLat, midLon], {
+                icon: L.divIcon({
+                    className: 'route-arrow-icon',
+                    html: `<div class="route-arrow" style="--color: ${color}; transform: rotate(${angle}deg)">▶</div>`,
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
+                }),
+                interactive: false
+            }).addTo(layerGroup);
+        }
+
+        // ── Tooltip al hover ──
+        mainLine.bindTooltip(`<strong>${escapeHtml(routeName)}</strong><br><small>${coords.length} puntos</small>`, {
+            sticky: true,
+            direction: 'top',
+            className: 'route-tooltip'
+        });
+
+        // ── Bounds ──
+        const routeBounds = mainLine.getBounds();
+        if (!allBounds) allBounds = routeBounds;
+        else allBounds.extend(routeBounds);
+
+        // ── Panel lateral: entrada de ruta ──
+        const routeItem = document.createElement('div');
+        routeItem.className = 'route-list-item';
+        routeItem.innerHTML = `
+            <div class="route-color-dot" style="background:${color}"></div>
+            <div class="route-info">
+                <strong>${escapeHtml(routeName)}</strong>
+                <small>${coords.length} pts · Paradas: <span id="stopCount_${routeId}">-</span></small>
+            </div>
+            <div class="route-actions">
+                <button class="btn-icon" title="Centrar en ruta" onclick="centerOnRoute(${routeId})">◎</button>
+                <button class="btn-icon" title="Zoom a ruta" onclick="zoomToRoute(${routeId})">🔍</button>
+            </div>
+        `;
+        routeItem.addEventListener('click', () => highlightRoute(routeId));
+        routeListEl.appendChild(routeItem);
+
+        // ── Cargar paradas de esta ruta ──
+        loadStopsForRoute(coords, routeId, color);
+    });
+
+    // Centrar en todas las rutas
+    if (allBounds) {
+        map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 16 });
+    }
+}
+
+// ──────────────────────────────────────────────
+// 5. CARGA DE PARADAS (DESDE LA MISMA RUTA, NO DESDE API)
+// ──────────────────────────────────────────────
+async function loadStopsForRoute(routeCoords, routeId, color) {
+    try {
+        const bounds = L.latLngBounds(routeCoords.map(c => [c[1], c[0]]));
+        const center = bounds.getCenter();
+        
+        const response = await fetch(
+            `${API_URL}/api/stops/nearby?lat=${center.lat}&lon=${center.lng}&radius_meters=10000&max_results=100`
+        );
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        const stops = (data.nearby_stops || []).filter(s => {
+            // Solo paradas cerca de esta ruta (<500m del trazo)
+            const stopLat = s.geometry.coordinates[1];
+            const stopLon = s.geometry.coordinates[0];
+            let minDist = Infinity;
+            for (const c of routeCoords) {
+                const d = Math.hypot(c[1] - stopLon, c[0] - stopLat) * 111000;
+                if (d < minDist) minDist = d;
+            }
+            return minDist < 500;
+        });
+
+        // Actualizar contador en panel
+        const countEl = document.getElementById(`stopCount_${routeId}`);
+        if (countEl) countEl.textContent = stops.length;
+
+        // Renderizar paradas
+        stops.forEach((stop, index) => {
+            const stopLat = stop.geometry.coordinates[1];
+            const stopLon = stop.geometry.coordinates[0];
+            const stopName = stop.name || `Parada ${index + 1}`;
+            
+            const marker = L.marker([stopLat, stopLon], {
+                icon: createStopIcon(index + 1, color)
+            });
+
+            // Popup estilizado
+            marker.bindPopup(`
+                <div class="stop-popup">
+                    <h3>🚏 ${escapeHtml(stopName)}</h3>
+                    <div class="popup-info">
+                        <span>📍 ${stopLat.toFixed(6)}, ${stopLon.toFixed(6)}</span>
+                        <span>📏 ${stop.distance || '-'} m</span>
+                    </div>
+                </div>
+            `, { maxWidth: 260, className: 'custom-popup' });
+
+            // Tooltip hover
+            marker.bindTooltip(`<strong>${escapeHtml(stopName)}</strong>`, {
+                direction: 'top',
+                offset: [0, -18],
+                className: 'stop-tooltip'
+            });
+
+            if (routeLayers[routeId]) {
+                marker.addTo(routeLayers[routeId]);
+            }
+            stopMarkers.push({ marker, routeId, name: stopName, coords: [stopLat, stopLon] });
+        });
+
+        // Panel lateral: lista de paradas
+        if (stops.length > 0) {
+            const stopHeader = document.createElement('div');
+            stopHeader.className = 'stop-list-header';
+            stopHeader.innerHTML = `<span style="color:${color}">●</span> ${escapeHtml(`Ruta #${routeId}`)}`;
+            stopListEl.appendChild(stopHeader);
+            
+            stops.forEach((stop, idx) => {
+                const stopItem = document.createElement('div');
+                stopItem.className = 'stop-list-item';
+                stopItem.innerHTML = `
+                    <span class="stop-list-number" style="background:${color}">${idx + 1}</span>
+                    <span class="stop-list-name">${escapeHtml(stop.name || `Parada ${idx + 1}`)}</span>
+                    <span class="stop-list-dist">${stop.distance || '-'}m</span>
+                `;
+                stopItem.addEventListener('click', () => {
+                    const lat = stop.geometry.coordinates[1];
+                    const lon = stop.geometry.coordinates[0];
+                    map.setView([lat, lon], 17, { animate: true });
+                });
+                stopListEl.appendChild(stopItem);
+            });
+        }
+        
+    } catch (e) {
+        console.error('Error cargando paradas:', e);
+    }
+}
+
+// ──────────────────────────────────────────────
+// 6. INTERACCIÓN: HIGHLIGHT DE RUTA
+// ──────────────────────────────────────────────
+function highlightRoute(routeId) {
+    if (activeRouteIndex === routeId) {
+        // Deseleccionar
+        activeRouteIndex = -1;
+        Object.values(routeLayers).forEach(lg => lg.setStyle({ opacity: CONFIG.routeOpacity }));
+        Object.keys(routeLayers).forEach(id => {
+            routeLayers[id].eachLayer(l => {
+                if (l instanceof L.Polyline && l.options.color) {
+                    l.setStyle({ weight: CONFIG.routeWeight });
+                }
+            });
+        });
+        document.querySelectorAll('.route-list-item').forEach(el => el.classList.remove('active'));
+        return;
+    }
+
+    activeRouteIndex = routeId;
+
+    // Atenuar otras rutas
+    Object.entries(routeLayers).forEach(([id, lg]) => {
+        if (parseInt(id) === routeId) {
+            lg.setStyle({ opacity: 1 });
+            lg.eachLayer(l => {
+                if (l instanceof L.Polyline && l.options.color) {
+                    l.setStyle({ weight: CONFIG.routeWeight + 2 });
+                }
+            });
+        } else {
+            lg.setStyle({ opacity: 0.2 });
+            lg.eachLayer(l => {
+                if (l instanceof L.Polyline && l.options.color) {
+                    l.setStyle({ weight: 2 });
+                }
+            });
+        }
+    });
+
+    // Highlight en panel
+    document.querySelectorAll('.route-list-item').forEach((el, i) => {
+        el.classList.toggle('active', i === Object.keys(routeLayers).indexOf(routeId));
+    });
+}
+
+function centerOnRoute(routeId) {
+    const lg = routeLayers[routeId];
+    if (lg) {
+        const bounds = L.latLngBounds();
+        lg.eachLayer(l => {
+            if (l instanceof L.Polyline) {
+                l.getLatLngs().forEach(ll => bounds.extend(ll));
+            }
+        });
+        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16 });
+    }
+}
+
+function zoomToRoute(routeId) {
+    const lg = routeLayers[routeId];
+    if (lg) {
+        const bounds = L.latLngBounds();
+        lg.eachLayer(l => {
+            if (l instanceof L.Polyline) {
+                l.getLatLngs().forEach(ll => bounds.extend(ll));
+            }
+        });
+        map.flyToBounds(bounds, { padding: [50, 50], maxZoom: 17, duration: 1.2 });
+    }
+}
+
+// ──────────────────────────────────────────────
+// 7. CONEXIÓN WEBSOCKET (con animación de buses)
+// ──────────────────────────────────────────────
 let wsReconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 let wsInstance = null;
 let pingTimer = null;
 let wsConnectionAttempts = 0;
+const busLastPos = {};  // { bus_id: { lat, lon, timestamp } }
 
 function connectWebSocket() {
-    // Cerrar instancia anterior si existe
-    if (wsInstance && wsInstance.readyState !== WebSocket.CLOSED) {
-        wsInstance.close();
-    }
-    
-    if (pingTimer) {
-        clearInterval(pingTimer);
-        pingTimer = null;
-    }
-    
+    if (wsInstance && wsInstance.readyState !== WebSocket.CLOSED) wsInstance.close();
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+
     const ws = new WebSocket(WS_URL);
     wsInstance = ws;
     wsConnectionAttempts++;
-    console.log('[WS] Intento de conexión #' + wsConnectionAttempts + ' a ' + WS_URL);
 
     ws.onopen = () => {
-        console.log('[WS] Conectado exitosamente en intento #' + wsConnectionAttempts);
         updateConnectionStatus(true);
         wsReconnectDelay = 1000;
         wsConnectionAttempts = 0;
         
-        // Ping cada 30 segundos para mantener viva la conexión
         pingTimer = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: "ping" }));
@@ -121,135 +406,153 @@ function connectWebSocket() {
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            
             if (data.type === "bus_positions" && Array.isArray(data.buses)) {
                 data.buses.forEach(bus => {
-                    // DevSecOps: Validar coordenadas antes de usar
+                    // Validar coordenadas
                     if (typeof bus.lat !== 'number' || typeof bus.lon !== 'number' ||
                         bus.lat < -90 || bus.lat > 90 || bus.lon < -180 || bus.lon > 180) {
-                        console.warn('Coordenadas inválidas recibidas:', bus);
                         return;
                     }
-                    
+
+                    // Calcular bearing si tenemos posición anterior
+                    let bearing = 0;
+                    const last = busLastPos[bus.id];
+                    if (last && (bus.lat !== last.lat || bus.lon !== last.lon)) {
+                        const dLon = (bus.lon - last.lon) * Math.PI / 180;
+                        const y = Math.sin(dLon) * Math.cos(bus.lat * Math.PI / 180);
+                        const x = Math.cos(last.lat * Math.PI / 180) * Math.sin(bus.lat * Math.PI / 180) -
+                                  Math.sin(last.lat * Math.PI / 180) * Math.cos(bus.lat * Math.PI / 180) * Math.cos(dLon);
+                        bearing = Math.atan2(y, x) * 180 / Math.PI;
+                    }
+                    busLastPos[bus.id] = { lat: bus.lat, lon: bus.lon, timestamp: Date.now() };
+
+                    // Actualizar o crear marcador
                     if (busMarkers[bus.id]) {
                         busMarkers[bus.id].setLatLng([bus.lat, bus.lon]);
-                    } else {
-                        // Limitar número de marcadores para prevenir DoS
-                        if (Object.keys(busMarkers).length >= MAX_BUS_MARKERS) {
-                            console.warn('Límite de marcadores alcanzado');
-                            return;
+                        // Actualizar rotación del icono
+                        const icon = createBusIcon(bearing);
+                        busMarkers[bus.id].setIcon(icon);
+                        
+                        // Actualizar trail
+                        if (busTrails[bus.id]) {
+                            busTrails[bus.id].addLatLng([bus.lat, bus.lon]);
+                            // Mantener solo últimos 20 puntos
+                            const latlngs = busTrails[bus.id].getLatLngs();
+                            if (latlngs.length > 20) {
+                                busTrails[bus.id].setLatLngs(latlngs.slice(-20));
+                            }
                         }
-                        const marker = L.marker([bus.lat, bus.lon]).addTo(map);
-                        const sourceLabel = bus.source === 'real' ? '📡 Real' : '';
-                        marker.bindPopup(`<b>🚌 Unidad:</b> ${escapeHtml(bus.id)}<br>${escapeHtml(sourceLabel)}`);
+                    } else {
+                        if (Object.keys(busMarkers).length >= CONFIG.maxBusMarkers) return;
+                        
+                        const marker = L.marker([bus.lat, bus.lon], {
+                            icon: createBusIcon(0),
+                            zIndexOffset: 1000
+                        }).addTo(map);
+                        
+                        const sourceLabel = bus.source === 'real' ? '📡 GPS Real' : '🔄 Simulación';
+                        marker.bindPopup(`
+                            <div class="bus-popup">
+                                <h3>🚌 ${escapeHtml(bus.id)}</h3>
+                                <div class="popup-info">
+                                    <span>📍 ${bus.lat.toFixed(6)}, ${bus.lon.toFixed(6)}</span>
+                                    <span>🔗 ${escapeHtml(sourceLabel)}</span>
+                                </div>
+                            </div>
+                        `, { maxWidth: 260, className: 'custom-popup' });
+                        
                         busMarkers[bus.id] = marker;
+                        
+                        // Crear trail
+                        const trail = L.polyline([[bus.lat, bus.lon]], {
+                            color: '#2563eb',
+                            weight: 2,
+                            opacity: 0.4,
+                            dashArray: '5 10',
+                            interactive: false
+                        }).addTo(map);
+                        busTrails[bus.id] = trail;
+                    }
+                });
+
+                // Limpiar buses inactivos (>60s sin actualizar)
+                const now = Date.now();
+                Object.entries(busLastPos).forEach(([id, pos]) => {
+                    if (now - pos.timestamp > 60000) {
+                        if (busMarkers[id]) {
+                            map.removeLayer(busMarkers[id]);
+                            delete busMarkers[id];
+                        }
+                        if (busTrails[id]) {
+                            map.removeLayer(busTrails[id]);
+                            delete busTrails[id];
+                        }
+                        delete busLastPos[id];
                     }
                 });
             }
         } catch (err) {
-            console.error('Error procesando mensaje WS:', err);
+            console.error('Error WS:', err);
         }
     };
 
     ws.onclose = (event) => {
-        if (pingTimer) {
-            clearInterval(pingTimer);
-            pingTimer = null;
-        }
-        console.log('[WS] Desconectado (código ' + event.code + ', intentos: ' + wsConnectionAttempts + '). Reconectando en ' + (wsReconnectDelay/1000) + 's...');
+        if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
         updateConnectionStatus(false);
-        
-        if (wsConnectionAttempts <= 2) {
-            connectionStatusEl.style.opacity = '0.5';
-        }
-        
-        // Backoff exponencial con cota máxima
         setTimeout(connectWebSocket, wsReconnectDelay);
         wsReconnectDelay = Math.min(wsReconnectDelay * 2, MAX_RECONNECT_DELAY);
     };
-
-    ws.onerror = (error) => {
-        console.error('[WS] Error en intento #' + wsConnectionAttempts + ':', error);
-    };
 }
 
-// Registrar Service Worker (movido desde inline en HTML para cumplir CSP sin unsafe-inline)
+// ──────────────────────────────────────────────
+// 8. INDICADOR DE CONEXIÓN
+// ──────────────────────────────────────────────
+let connectionHideTimer = null;
+
+function updateConnectionStatus(connected) {
+    const el = document.getElementById('connection-status');
+    const textEl = document.getElementById('connection-text');
+    if (!el || !textEl) return;
+
+    if (connectionHideTimer) clearTimeout(connectionHideTimer);
+    el.style.opacity = '1';
+
+    if (connected) {
+        el.className = 'connection-status connected';
+        textEl.textContent = '🟢 Conectado';
+        connectionHideTimer = setTimeout(() => { el.style.opacity = '0'; }, 3000);
+    } else {
+        el.className = 'connection-status lost';
+        textEl.textContent = '🔴 Sin conexión';
+        connectionHideTimer = setTimeout(() => { el.style.opacity = '0.5'; }, 10000);
+    }
+}
+
+// ──────────────────────────────────────────────
+// 9. SERVICEWORKER + BOTÓN REFRESH
+// ──────────────────────────────────────────────
 function initServiceWorker() {
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('/sw.js')
-                .then(reg => console.log('✅ Service Worker registrado:', reg.scope))
-                .catch(err => console.error('❌ Error registrando SW:', err));
+                .then(reg => console.log('✅ SW registrado:', reg.scope))
+                .catch(err => console.error('❌ SW:', err));
         });
     }
 }
 
-// DevSecOps: Escapar HTML para prevenir XSS en popups
 function escapeHtml(str) {
     const div = document.createElement('div');
     div.appendChild(document.createTextNode(str));
     return div.innerHTML;
 }
 
-// Inicializar al cargar el DOM
-document.addEventListener('DOMContentLoaded', () => {
-    initServiceWorker();
-    loadRoutes();
-    connectWebSocket();
-    
-    // Configurar botón GPS
-    const gpsBtn = document.getElementById('btn-gps');
-    if (gpsBtn) {
-        gpsBtn.addEventListener('click', findNearbyStops);
-    }
-    
-    // CORRECCIÓN: Botón de Refresh - desregistrar SW antes de recargar
-    const refreshBtn = document.getElementById('btn-refresh');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', async () => {
-            console.log('[Refresh] Iniciando limpieza completa...');
-            
-            // 1. Cerrar WebSocket activo
-            if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
-                wsInstance.close(1000, 'Usuario solicitó refresh');
-            }
-            
-            // 2. Desregistrar todos los Service Workers
-            if ('serviceWorker' in navigator) {
-                try {
-                    const registrations = await navigator.serviceWorker.getRegistrations();
-                    for (const reg of registrations) {
-                        await reg.unregister();
-                    }
-                    console.log('[Refresh] ' + registrations.length + ' SW desregistrados.');
-                } catch (err) {
-                    console.error('[Refresh] Error desregistrando SW:', err);
-                }
-            }
-            
-            // 3. Borrar todos los cachés
-            if ('caches' in window) {
-                try {
-                    const cacheNames = await caches.keys();
-                    await Promise.all(cacheNames.map(name => caches.delete(name)));
-                    console.log('[Refresh] ' + cacheNames.length + ' cachés borrados.');
-                } catch (err) {
-                    console.error('[Refresh] Error borrando caché:', err);
-                }
-            }
-            
-            // 4. Recargar limpio
-            setTimeout(() => {
-                window.location.reload();
-            }, 300);
-        });
-    }
-});
-
-// 5. Función de búsqueda de paradas cercanas
+// ──────────────────────────────────────────────
+// 10. BÚSQUEDA DE PARADAS CERCANAS (GPS)
+// ──────────────────────────────────────────────
 async function findNearbyStops() {
     if (!navigator.geolocation) {
-        alert("Tu navegador no soporta geolocalización");
+        alert('Tu navegador no soporta geolocalización');
         return;
     }
 
@@ -259,82 +562,117 @@ async function findNearbyStops() {
     navigator.geolocation.getCurrentPosition(async (position) => {
         const userLat = position.coords.latitude;
         const userLon = position.coords.longitude;
-        
-        // DevSecOps: Validar coordenadas del GPS
-        if (!isFinite(userLat) || !isFinite(userLon) || 
+
+        if (!isFinite(userLat) || !isFinite(userLon) ||
             userLat < -90 || userLat > 90 || userLon < -180 || userLon > 180) {
-            alert("Coordenadas GPS inválidas recibidas de tu dispositivo.");
+            alert('Coordenadas GPS inválidas.');
             if (gpsBtn) gpsBtn.classList.remove('searching');
             return;
         }
-        
-        map.setView([userLat, userLon], 16);
-        
+
+        map.setView([userLat, userLon], 16, { animate: true });
+
+        // Marcador de posición actual
         L.marker([userLat, userLon], {
-            icon: L.icon({
-                iconUrl: 'https://cdn-icons-png.flaticon.com/512/149/149059.png',
-                iconSize: [30, 30]
+            icon: L.divIcon({
+                className: 'my-location-icon',
+                html: '<div class="my-location-dot"></div>',
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
             })
-        }).addTo(map).bindPopup("<b>¡Estás aquí!</b>").openPopup();
+        }).addTo(map).bindPopup('<b>📍 Estás aquí</b>').openPopup();
 
         try {
-            // Codificar parámetros para prevenir inyección
             const params = new URLSearchParams({
                 lat: userLat.toString(),
                 lon: userLon.toString(),
-                radius_meters: '700'
+                radius_meters: '1000'
             });
             const response = await fetch(`${API_URL}/api/stops/nearby?${params}`);
-            
-            if (!response.ok) {
-                throw new Error(`Error HTTP: ${response.status}`);
-            }
-            
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
             const data = await response.json();
-            
-            if(!data.nearby_stops || data.nearby_stops.length === 0) {
-                alert("No hay paradas a menos de 700 metros de tu ubicación.");
+            if (!data.nearby_stops || data.nearby_stops.length === 0) {
+                alert('No hay paradas a menos de 1 km.');
                 return;
             }
 
-            data.nearby_stops.forEach(stop => {
-                if (!stop.geometry || !Array.isArray(stop.geometry.coordinates)) {
-                    console.warn('Datos de parada inválidos:', stop);
-                    return;
-                }
+            data.nearby_stops.forEach((stop, idx) => {
+                if (!stop.geometry || !Array.isArray(stop.geometry.coordinates)) return;
                 const stopLat = stop.geometry.coordinates[1];
                 const stopLon = stop.geometry.coordinates[0];
-                
                 if (!isFinite(stopLat) || !isFinite(stopLon)) return;
-                
-                L.circleMarker([stopLat, stopLon], {
-                    radius: 8,
-                    fillColor: "#10b981",
-                    color: "#047857",
-                    weight: 2,
-                    opacity: 1,
-                    fillOpacity: 0.8
-                }).addTo(map).bindPopup(`<b>🚏 ${escapeHtml(stop.name)}</b><br> A ${stop.distance} metros de ti.`);
+
+                L.marker([stopLat, stopLon], {
+                    icon: createStopIcon(idx + 1, '#f59e0b')
+                }).addTo(map).bindPopup(`
+                    <div class="stop-popup">
+                        <h3>🚏 ${escapeHtml(stop.name)}</h3>
+                        <div class="popup-info">
+                            <span>📏 ${stop.distance}m de ti</span>
+                        </div>
+                    </div>
+                `, { maxWidth: 260, className: 'custom-popup' });
             });
-        } catch(error) {
-            console.error("Error obteniendo paradas:", error);
-            alert("Error al buscar paradas. ¿Estás conectado a internet?");
+        } catch (error) {
+            console.error('Error buscando paradas:', error);
+            alert('Error al buscar paradas. ¿Estás conectado?');
         } finally {
             if (gpsBtn) gpsBtn.classList.remove('searching');
         }
-        
     }, (error) => {
         if (gpsBtn) gpsBtn.classList.remove('searching');
-        if (error.code === 1) {
-            alert("Por favor, permite el acceso al GPS desde los ajustes de tu navegador.");
-        } else if (error.code === 2) {
-            alert("No se pudo obtener tu ubicación. Verifica tu conexión.");
-        } else {
-            alert("Tu dispositivo tardó demasiado en obtener la ubicación.");
-        }
+        if (error.code === 1) alert('Permite el acceso al GPS en tu navegador.');
+        else if (error.code === 2) alert('Ubicación no disponible. Verifica tu conexión.');
+        else alert('Timeout al obtener ubicación.');
     }, {
         enableHighAccuracy: true,
         timeout: 15000,
         maximumAge: 60000
     });
 }
+
+// ──────────────────────────────────────────────
+// 11. INICIALIZACIÓN
+// ──────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    initServiceWorker();
+    loadRoutes();
+    connectWebSocket();
+
+    // Botón GPS
+    const gpsBtn = document.getElementById('btn-gps');
+    if (gpsBtn) gpsBtn.addEventListener('click', findNearbyStops);
+
+    // Botón Refresh
+    const refreshBtn = document.getElementById('btn-refresh');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async () => {
+            if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
+                wsInstance.close(1000, 'Refresh');
+            }
+            if ('serviceWorker' in navigator) {
+                try {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map(r => r.unregister()));
+                } catch (e) {}
+            }
+            if ('caches' in window) {
+                try {
+                    const names = await caches.keys();
+                    await Promise.all(names.map(n => caches.delete(n)));
+                } catch (e) {}
+            }
+            setTimeout(() => window.location.reload(), 300);
+        });
+    }
+
+    // Toggle panel lateral
+    const toggleBtn = document.getElementById('btn-toggle-panel');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+            const panel = document.getElementById('side-panel');
+            if (panel) panel.classList.toggle('collapsed');
+        });
+    }
+});
