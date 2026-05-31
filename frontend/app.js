@@ -32,10 +32,10 @@ const map = L.map('map', {
     attributionControl: true
 });
 
-// Capa base clara (CartoDB Voyager — estilo moderno minimalista)
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+// Capa base OpenStreetMap (confiable, sin dependencia de CDNs externos)
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a> · OptiBus'
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · OptiBus'
 }).addTo(map);
 
 // ──────────────────────────────────────────────
