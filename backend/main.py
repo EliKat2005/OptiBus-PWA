@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from database import engine, Base, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, cast, and_, desc
+from sqlalchemy.orm import selectinload
 from geoalchemy2.types import Geography
 from prometheus_fastapi_instrumentator import Instrumentator
 from fastapi import UploadFile, File, Form
@@ -256,16 +257,47 @@ async def health_check():
 
 @app.get("/api/routes")
 async def get_routes(db: AsyncSession = Depends(get_db)):
+    # Cargar rutas con sus paradas en una sola consulta (eager loading)
     result = await db.execute(
-        select(models.Route.id, models.Route.name, func.ST_AsGeoJSON(models.Route.geom).label('geojson'))
+        select(models.Route).options(
+            selectinload(models.Route.stops)
+        ).order_by(models.Route.id)
     )
+    routes = result.scalars().all()
+    
     features = []
-    for row in result:
+    for route in routes:
+        # Extraer stops con coordenadas
+        stops_list = []
+        for stop in route.stops:
+            # ST_AsGeoJSON para obtener coordenadas de la parada
+            stop_result = await db.execute(
+                select(func.ST_Y(stop.geom).label('lat'), func.ST_X(stop.geom).label('lon'))
+            )
+            stop_coords = stop_result.one()
+            stops_list.append({
+                "id": stop.id,
+                "name": stop.name,
+                "lat": round(stop_coords.lat, 7),
+                "lon": round(stop_coords.lon, 7)
+            })
+        
+        # Obtener geometría de la ruta
+        geom_result = await db.execute(
+            select(func.ST_AsGeoJSON(route.geom))
+        )
+        geojson_str = geom_result.scalar_one()
+        
         features.append({
             "type": "Feature",
-            "properties": {"id": row.id, "name": row.name},
-            "geometry": json.loads(row.geojson)
+            "properties": {
+                "id": route.id,
+                "name": route.name,
+                "stops": stops_list
+            },
+            "geometry": json.loads(geojson_str)
         })
+    
     return {"type": "FeatureCollection", "features": features}
 
 @app.get("/api/stops/nearby")

@@ -198,68 +198,29 @@ function renderRoutes(geojsonData) {
         routeItem.addEventListener('click', () => highlightRoute(routeId));
         routeListEl.appendChild(routeItem);
 
-        // ── Cargar paradas de esta ruta ──
-        loadStopsForRoute(coords, routeId, color);
-    });
-
-    // Centrar en todas las rutas
-    if (allBounds) {
-        map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 16 });
-    }
-}
-
-// ──────────────────────────────────────────────
-// 5. CARGA DE PARADAS (DESDE LA MISMA RUTA, NO DESDE API)
-// ──────────────────────────────────────────────
-async function loadStopsForRoute(routeCoords, routeId, color) {
-    try {
-        const bounds = L.latLngBounds(routeCoords.map(c => [c[1], c[0]]));
-        const center = bounds.getCenter();
-        
-        const response = await fetch(
-            `${API_URL}/api/stops/nearby?lat=${center.lat}&lon=${center.lng}&radius_meters=10000&max_results=100`
-        );
-        if (!response.ok) return;
-        
-        const data = await response.json();
-        const stops = (data.nearby_stops || []).filter(s => {
-            // Solo paradas cerca de esta ruta (<500m del trazo)
-            const stopLat = s.geometry.coordinates[1];
-            const stopLon = s.geometry.coordinates[0];
-            let minDist = Infinity;
-            for (const c of routeCoords) {
-                const d = Math.hypot(c[1] - stopLon, c[0] - stopLat) * 111000;
-                if (d < minDist) minDist = d;
-            }
-            return minDist < 500;
-        });
-
-        // Actualizar contador en panel
+        // ── Renderizar paradas incluidas en la respuesta ──
+        const stops = feature.properties.stops || [];
         const countEl = document.getElementById(`stopCount_${routeId}`);
         if (countEl) countEl.textContent = stops.length;
 
-        // Renderizar paradas
         stops.forEach((stop, index) => {
-            const stopLat = stop.geometry.coordinates[1];
-            const stopLon = stop.geometry.coordinates[0];
+            const stopLat = stop.lat;
+            const stopLon = stop.lon;
             const stopName = stop.name || `Parada ${index + 1}`;
             
             const marker = L.marker([stopLat, stopLon], {
                 icon: createStopIcon(index + 1, color)
             });
 
-            // Popup estilizado
             marker.bindPopup(`
                 <div class="stop-popup">
                     <h3>🚏 ${escapeHtml(stopName)}</h3>
                     <div class="popup-info">
                         <span>📍 ${stopLat.toFixed(6)}, ${stopLon.toFixed(6)}</span>
-                        <span>📏 ${stop.distance || '-'} m</span>
                     </div>
                 </div>
             `, { maxWidth: 260, className: 'custom-popup' });
 
-            // Tooltip hover
             marker.bindTooltip(`<strong>${escapeHtml(stopName)}</strong>`, {
                 direction: 'top',
                 offset: [0, -18],
@@ -276,7 +237,7 @@ async function loadStopsForRoute(routeCoords, routeId, color) {
         if (stops.length > 0) {
             const stopHeader = document.createElement('div');
             stopHeader.className = 'stop-list-header';
-            stopHeader.innerHTML = `<span style="color:${color}">●</span> ${escapeHtml(`Ruta #${routeId}`)}`;
+            stopHeader.innerHTML = `<span style="color:${color}">●</span> ${escapeHtml(routeName)}`;
             stopListEl.appendChild(stopHeader);
             
             stops.forEach((stop, idx) => {
@@ -285,19 +246,18 @@ async function loadStopsForRoute(routeCoords, routeId, color) {
                 stopItem.innerHTML = `
                     <span class="stop-list-number" style="background:${color}">${idx + 1}</span>
                     <span class="stop-list-name">${escapeHtml(stop.name || `Parada ${idx + 1}`)}</span>
-                    <span class="stop-list-dist">${stop.distance || '-'}m</span>
                 `;
                 stopItem.addEventListener('click', () => {
-                    const lat = stop.geometry.coordinates[1];
-                    const lon = stop.geometry.coordinates[0];
-                    map.setView([lat, lon], 17, { animate: true });
+                    map.setView([stop.lat, stop.lon], 17, { animate: true });
                 });
                 stopListEl.appendChild(stopItem);
             });
         }
-        
-    } catch (e) {
-        console.error('Error cargando paradas:', e);
+    });
+
+    // Centrar en todas las rutas
+    if (allBounds) {
+        map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 16 });
     }
 }
 
