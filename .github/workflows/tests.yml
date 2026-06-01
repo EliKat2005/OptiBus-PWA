@@ -51,10 +51,15 @@ jobs:
           cd backend
           python -m pytest test_api.py -v
 
-      - name: Security scan (Bandit)
+      - name: Security scan (Bandit SAST)
         run: |
           pip install bandit
           bandit -r backend/ -x backend/test_api.py
+
+      - name: Security scan (pip-audit SCA)
+        run: |
+          pip install pip-audit
+          cd backend && pip-audit
 
   shellcheck:
     runs-on: ubuntu-latest
