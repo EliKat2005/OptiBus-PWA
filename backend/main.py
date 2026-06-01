@@ -985,6 +985,7 @@ async def upload_recorded_route(
     company: str = Form(default=""),
     route_name: str = Form(...),
     tags: str = Form(default=""),
+    max_speed_kmh: float = Form(default=120.0),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1017,7 +1018,7 @@ async def upload_recorded_route(
         raise HTTPException(status_code=400, detail="Se requieren al menos 2 puntos GPS")
     
     # Limpiar y filtrar outliers usando gps_cleaner
-    cleaned_points = clean_gps_track(raw_points)
+    cleaned_points = clean_gps_track(raw_points, max_speed_kmh=max_speed_kmh)
     removed = len(raw_points) - len(cleaned_points)
     if removed > 0:
         logger.info(f"GPS cleaner eliminó {removed} de {len(raw_points)} puntos (outliers/ruido)")
