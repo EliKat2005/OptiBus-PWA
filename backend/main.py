@@ -624,16 +624,34 @@ async def get_active_buses(_auth: None = Depends(verify_api_key), minutes: int =
 # --- Dashboard Admin (HTML) ---
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(
-    _auth: None = Depends(verify_api_key),
-    api_key: str | None = Query(default=None, include_in_schema=False)
+    request: Request,
+    api_key: str | None = Query(default=None, include_in_schema=False),
+    db: AsyncSession = Depends(get_db)
 ):
-    # Si se pasa api_key por query param, verificar manualmente (útil para navegador vía SSH tunnel)
-    if api_key and compare_digest(api_key, OPTIBUS_API_KEY):
-        _auth = {"auth_type": "api_key", "role": "admin"}
-    elif isinstance(_auth, dict) or _auth is True:
-        pass  # Ya autenticado por verify_api_key
-    else:
-        return JSONResponse(status_code=401, content={"detail": "Agrega ?api_key=TU_KEY a la URL o usa Authorization: Bearer"})
+    """Dashboard admin accesible vía API Key (header, query param) o JWT."""
+    authed = False
+    
+    # Método 1: Query param ?api_key=
+    if api_key and API_KEY_ENABLED and compare_digest(api_key, OPTIBUS_API_KEY):
+        authed = True
+    
+    # Método 2: Header Authorization: Bearer
+    if not authed:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            if API_KEY_ENABLED and compare_digest(token, OPTIBUS_API_KEY):
+                authed = True
+            else:
+                try:
+                    payload = decode_jwt_token(token)
+                    if payload.get("type") == "access":
+                        authed = True
+                except Exception:
+                    pass
+    
+    if not authed:
+        return JSONResponse(status_code=401, content={"detail": "Agrega ?api_key=TU_KEY a la URL o usa Authorization: Bearer <token>"})
     
     return HTMLResponse("""
 <!DOCTYPE html>
