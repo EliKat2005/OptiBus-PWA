@@ -269,7 +269,14 @@ class RouteRecorderService : Service(), LocationListener {
         pointCounter++
 
         lastLocation?.let { last ->
-            totalDistanceMeters += last.distanceTo(location)
+            val dist = last.distanceTo(location)
+            val timeDiff = (location.time - last.time) / 1000.0 // segundos
+            val speedMs = if (timeDiff > 0.5) dist / timeDiff else 0.0
+            val speedKmh = speedMs * 3.6
+            // Ignorar outliers: descartar puntos que implicarían >150 km/h
+            if (speedKmh <= 150.0) {
+                totalDistanceMeters += dist
+            }
         }
         lastLocation = location
 
