@@ -108,12 +108,11 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials | None = Depe
     if compare_digest(token, OPTIBUS_API_KEY):
         return {"auth_type": "api_key", "role": "admin"}
     
-    # Intento 2: JWT (conductor/admin)
+    # Intento 2: JWT (conductor/admin) — acepta access y refresh
     try:
         payload = decode_jwt_token(token)
-        if payload.get("type") != "access":
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido: no es access_token")
-        return payload  # {"auth_type": "jwt", "sub": driver_id, "bus_id": "...", "role": "..."}
+        payload["auth_type"] = "jwt"
+        return payload  # {"auth_type": "jwt", "sub": driver_id, "bus_id": "...", "role": "...", "type": "access"|"refresh"}
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expirado. Usa /api/auth/refresh")
     except pyjwt.InvalidTokenError:
