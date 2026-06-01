@@ -173,10 +173,21 @@ def create_jwt_token(driver_id: int, bus_id: str, role: str, token_type: str = "
 def decode_jwt_token(token: str) -> dict:
     """Decodifica y valida un JWT. Lanza excepción si es inválido."""
     try:
-        # leeway=10: tolerancia de 10 segundos para clock skew entre contenedores
-        payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM], leeway=10)
+        # verify_iat=False: el clock skew entre contenedores causa falsos rechazos.
+        # La validación de expiración (exp) sigue activa.
+        # Validamos iat manualmente con tolerancia generosa.
+        payload = pyjwt.decode(
+            token, JWT_SECRET, algorithms=[JWT_ALGORITHM],
+            leeway=30,
+            options={"verify_iat": False}
+        )
         if "sub" not in payload or "type" not in payload:
             raise pyjwt.InvalidTokenError("Missing required claims: sub or type")
+        # Validación manual de iat con 60s de tolerancia
+        now_ts = _now_ts()
+        iat = payload.get("iat", 0)
+        if iat > now_ts + 60:
+            raise pyjwt.InvalidTokenError("Token issued in the future")
         return payload
     except pyjwt.ExpiredSignatureError:
         raise
