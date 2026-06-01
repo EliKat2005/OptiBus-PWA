@@ -360,22 +360,56 @@ class MainActivity : Activity() {
         }
 
         val stopCount = tvStopCount.text.toString().toIntOrNull() ?: 0
-        val stopName = "Parada ${stopCount + 1}"
+        
+        // Sugerencias rápidas de nombres comunes (scroll horizontal)
+        val suggestions = arrayOf(
+            "Terminal", "Mercado", "Colegio", "Hospital", 
+            "Parque Central", "Iglesia", "Estadio", "Universidad",
+            "Puente", "Cruz Roja", "Municipio", "Bomberos"
+        )
+        
+        val builder = android.app.AlertDialog.Builder(this)
+        builder.setTitle("🚏 Registrar Parada #${stopCount + 1}")
+        
+        // Layout personalizado con EditText
+        val input = EditText(this)
+        input.hint = "Nombre de la parada (ej. Terminal, Mercado...)"
+        input.setText(suggestions.getOrNull(stopCount % suggestions.size) ?: "")
+        input.setSingleLine(true)
+        input.maxLines = 1
+        input.setPadding(48, 32, 48, 16)
+        input.setTextSize(16f)
+        builder.setView(input)
+        
+        builder.setPositiveButton("✅ Registrar") { _, _ ->
+            val stopName = input.text.toString().trim().ifEmpty {
+                "Parada ${stopCount + 1}"
+            }
+            stopName
 
-        val serviceIntent = Intent(this, RouteRecorderService::class.java).apply {
-            action = RouteRecorderService.ACTION_ADD_STOP
-            putExtra(RouteRecorderService.EXTRA_STOP_NAME, stopName)
+            val serviceIntent = Intent(this, RouteRecorderService::class.java).apply {
+                action = RouteRecorderService.ACTION_ADD_STOP
+                putExtra(RouteRecorderService.EXTRA_STOP_NAME, stopName)
+            }
+            startService(serviceIntent)
+            
+            // Vibración breve para confirmar (requiere permiso VIBRATE, ya incluido por defecto)
+            try {
+                val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                vibrator.vibrate(android.os.VibrationEffect.createOneShot(100, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+            } catch (_: Exception) {}
+
+            tvStopAddedMsg.text = "✅ $stopName registrada"
+            tvStopAddedMsg.visibility = View.VISIBLE
+            tvStopAddedMsg.postDelayed({
+                tvStopAddedMsg.visibility = View.GONE
+            }, 3000)
+
+            Toast.makeText(this, "$stopName registrada", Toast.LENGTH_SHORT).show()
         }
-        startService(serviceIntent)
-
-        // Mostrar confirmación breve
-        tvStopAddedMsg.text = "✅ $stopName registrada"
-        tvStopAddedMsg.visibility = View.VISIBLE
-        tvStopAddedMsg.postDelayed({
-            tvStopAddedMsg.visibility = View.GONE
-        }, 2500)
-
-        Toast.makeText(this, "$stopName registrada", Toast.LENGTH_SHORT).show()
+        
+        builder.setNegativeButton("Cancelar") { dialog, _ -> dialog.cancel() }
+        builder.show()
     }
 
     private fun updateRecordingUI(recording: Boolean, paused: Boolean = false) {
