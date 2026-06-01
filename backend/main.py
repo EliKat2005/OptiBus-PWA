@@ -22,6 +22,8 @@ from collections import defaultdict
 from secrets import compare_digest, token_urlsafe
 import hashlib
 import jwt as pyjwt
+import base64
+import hmac as hmac_lib
 from datetime import datetime, timezone, timedelta
 import redis.asyncio as aioredis
 import math
@@ -154,9 +156,18 @@ def _now_ts() -> float:
     """Timestamp UNIX actual (UTC)."""
     return datetime.now(timezone.utc).timestamp()
 
+def _b64url_encode(data: bytes) -> str:
+    """Codifica bytes a base64url sin padding."""
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+def _b64url_decode(data: str) -> bytes:
+    """Decodifica base64url a bytes (maneja padding automáticamente)."""
+    padding = -len(data) % 4
+    return base64.urlsafe_b64decode(data + "=" * padding)
+
 def create_jwt_token(driver_id: int, bus_id: str, role: str, token_type: str = "access") -> str:
-    """Genera un JWT firmado."""
-    now_ts = _now_ts()
+    """Genera un JWT firmado manualmente (HMAC-SHA256)."""
+    now_ts = int(_now_ts())
     if token_type == "access":
         exp_ts = now_ts + (ACCESS_TOKEN_EXPIRE_MINUTES * 60)
     else:
@@ -167,37 +178,52 @@ def create_jwt_token(driver_id: int, bus_id: str, role: str, token_type: str = "
         "bus_id": bus_id,
         "role": role,
         "type": token_type,
-        "iat": int(now_ts),
-        "exp": int(exp_ts)
+        "iat": now_ts,
+        "exp": exp_ts
     }
-    token = pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    # PyJWT 2.x encode puede devolver bytes o str según la versión
-    return token if isinstance(token, str) else token.decode("utf-8")
+    
+    header = {"alg": "HS256", "typ": "JWT"}
+    header_b64 = _b64url_encode(json.dumps(header, separators=(',', ':')).encode())
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(',', ':')).encode())
+    
+    msg = f"{header_b64}.{payload_b64}".encode()
+    key = JWT_SECRET.encode() if isinstance(JWT_SECRET, str) else JWT_SECRET
+    sig = _b64url_encode(hmac_lib.new(key, msg, hashlib.sha256).digest())
+    
+    return f"{header_b64}.{payload_b64}.{sig}"
 
 def decode_jwt_token(token: str) -> dict:
-    """Decodifica y valida un JWT. Lanza excepción si es inválido."""
+    """Decodifica y valida un JWT manualmente (HMAC-SHA256)."""
     try:
-        # verify_iat=False: el clock skew entre contenedores causa falsos rechazos.
-        # La validación de expiración (exp) sigue activa.
-        # Validamos iat manualmente con tolerancia generosa.
-        payload = pyjwt.decode(
-            token, JWT_SECRET, algorithms=[JWT_ALGORITHM],
-            leeway=30,
-            options={"verify_iat": False}
-        )
+        parts = token.split(".")
+        if len(parts) != 3:
+            raise pyjwt.InvalidTokenError("Malformed JWT: expected 3 parts")
+        header_b64, payload_b64, sig_b64 = parts
+        
+        # Verificar firma
+        msg = f"{header_b64}.{payload_b64}".encode()
+        key = JWT_SECRET.encode() if isinstance(JWT_SECRET, str) else JWT_SECRET
+        expected_sig = hmac_lib.new(key, msg, hashlib.sha256).digest()
+        received_sig = _b64url_decode(sig_b64)
+        if not compare_digest(expected_sig, received_sig):
+            raise pyjwt.InvalidTokenError("Signature verification failed")
+        
+        # Decodificar payload
+        payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
+        
+        # Validar claims
+        exp = payload.get("exp", 0)
+        if _now_ts() > exp:
+            raise pyjwt.ExpiredSignatureError("Token expired")
         if "sub" not in payload or "type" not in payload:
             raise pyjwt.InvalidTokenError("Missing required claims: sub or type")
-        # Validación manual de iat con 60s de tolerancia
-        now_ts = _now_ts()
-        iat = payload.get("iat", 0)
-        if iat > now_ts + 60:
-            raise pyjwt.InvalidTokenError("Token issued in the future")
+        
         return payload
-    except pyjwt.ExpiredSignatureError:
+    except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
         raise
-    except pyjwt.InvalidTokenError as e:
+    except Exception as e:
         logger.error(f"JWT decode failed: {type(e).__name__}: {e}")
-        raise
+        raise pyjwt.InvalidTokenError(str(e))
 
 # ── Modelos Pydantic para Auth ──
 class LoginRequest(BaseModel):
