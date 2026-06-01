@@ -623,7 +623,18 @@ async def get_active_buses(_auth: None = Depends(verify_api_key), minutes: int =
 
 # --- Dashboard Admin (HTML) ---
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard(_auth: None = Depends(verify_api_key)):
+async def admin_dashboard(
+    _auth: None = Depends(verify_api_key),
+    api_key: str | None = Query(default=None, include_in_schema=False)
+):
+    # Si se pasa api_key por query param, verificar manualmente (útil para navegador vía SSH tunnel)
+    if api_key and compare_digest(api_key, OPTIBUS_API_KEY):
+        _auth = {"auth_type": "api_key", "role": "admin"}
+    elif isinstance(_auth, dict) or _auth is True:
+        pass  # Ya autenticado por verify_api_key
+    else:
+        return JSONResponse(status_code=401, content={"detail": "Agrega ?api_key=TU_KEY a la URL o usa Authorization: Bearer"})
+    
     return HTMLResponse("""
 <!DOCTYPE html>
 <html lang="es">
