@@ -124,8 +124,12 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials | None = Depe
 # ──────────────────────────────────────────────
 # JWT Authentication (DevSecOps)
 # ──────────────────────────────────────────────
-JWT_SECRET = OPTIBUS_API_KEY or "optibus-jwt-secret-dev-only-change-in-production"
+# Derivar una clave limpia SHA-256 a partir de OPTIBUS_API_KEY.
+# Los caracteres base64 (/ =) causan inconsistencias en PyJWT 2.x al firmar vs verificar.
+_JWT_RAW = OPTIBUS_API_KEY or "optibus-jwt-secret-dev-only-change-in-production"
+JWT_SECRET = hashlib.sha256(_JWT_RAW.encode()).hexdigest()
 JWT_ALGORITHM = "HS256"
+logger.info(f"JWT initialized: secret_hash={JWT_SECRET[:8]}... (derived from OPTIBUS_API_KEY)")
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 
