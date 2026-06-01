@@ -166,7 +166,10 @@ def create_jwt_token(driver_id: int, bus_id: str, role: str, token_type: str = "
 
 def decode_jwt_token(token: str) -> dict:
     """Decodifica y valida un JWT. Lanza excepción si es inválido."""
-    return pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM], options={"require": ["exp", "sub", "type"]})
+    payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    if "sub" not in payload or "type" not in payload:
+        raise pyjwt.InvalidTokenError("Missing required claims: sub or type")
+    return payload
 
 # ── Modelos Pydantic para Auth ──
 class LoginRequest(BaseModel):
