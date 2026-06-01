@@ -124,7 +124,7 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials | None = Depe
 # ──────────────────────────────────────────────
 # JWT Authentication (DevSecOps)
 # ──────────────────────────────────────────────
-JWT_SECRET = os.getenv("JWT_SECRET", OPTIBUS_API_KEY or token_urlsafe(32))
+JWT_SECRET = OPTIBUS_API_KEY or "optibus-jwt-secret-dev-only-change-in-production"
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 30
@@ -146,30 +146,43 @@ def verify_password(password: str, password_hash: str) -> bool:
     except (ValueError, AttributeError):
         return False
 
+def _now_ts() -> float:
+    """Timestamp UNIX actual (UTC)."""
+    return datetime.now(timezone.utc).timestamp()
+
 def create_jwt_token(driver_id: int, bus_id: str, role: str, token_type: str = "access") -> str:
     """Genera un JWT firmado."""
-    now = datetime.now(timezone.utc)
+    now_ts = _now_ts()
     if token_type == "access":
-        expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        exp_ts = now_ts + (ACCESS_TOKEN_EXPIRE_MINUTES * 60)
     else:
-        expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        exp_ts = now_ts + (REFRESH_TOKEN_EXPIRE_DAYS * 86400)
     
     payload = {
         "sub": driver_id,
         "bus_id": bus_id,
         "role": role,
         "type": token_type,
-        "iat": now,
-        "exp": expire
+        "iat": int(now_ts),
+        "exp": int(exp_ts)
     }
-    return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    token = pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    # PyJWT 2.x encode puede devolver bytes o str según la versión
+    return token if isinstance(token, str) else token.decode("utf-8")
 
 def decode_jwt_token(token: str) -> dict:
     """Decodifica y valida un JWT. Lanza excepción si es inválido."""
-    payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    if "sub" not in payload or "type" not in payload:
-        raise pyjwt.InvalidTokenError("Missing required claims: sub or type")
-    return payload
+    try:
+        # leeway=10: tolerancia de 10 segundos para clock skew entre contenedores
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM], leeway=10)
+        if "sub" not in payload or "type" not in payload:
+            raise pyjwt.InvalidTokenError("Missing required claims: sub or type")
+        return payload
+    except pyjwt.ExpiredSignatureError:
+        raise
+    except pyjwt.InvalidTokenError as e:
+        logger.error(f"JWT decode failed: {type(e).__name__}: {e}")
+        raise
 
 # ── Modelos Pydantic para Auth ──
 class LoginRequest(BaseModel):
