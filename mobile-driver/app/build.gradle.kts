@@ -30,8 +30,8 @@ android {
         applicationId = "com.optibus.driver"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "2.2"
+        versionCode = 5
+        versionName = "2.5"
 
         // DevSecOps: Variable de build para controlar logs solo en debug
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://ecae.me\"")
