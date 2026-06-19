@@ -403,11 +403,11 @@ async function findNearbyStops() {
             icon: L.divIcon({ className: 'my-location-icon', html: '<div class="my-location-dot"></div>', iconSize: [20, 20], iconAnchor: [10, 10] })
         }).addTo(map).bindPopup('<b>📍 Estás aquí</b>').openPopup();
         try {
-            const params = new URLSearchParams({ lat: userLat.toString(), lon: userLon.toString(), radius_meters: '1000' });
+            const params = new URLSearchParams({ lat: userLat.toString(), lon: userLon.toString(), radius_meters: '300' });
             const response = await fetch(`${API_URL}/api/stops/nearby?${params}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            if (!data.nearby_stops || data.nearby_stops.length === 0) { alert('No hay paradas a menos de 1 km.'); return; }
+            if (!data.nearby_stops || data.nearby_stops.length === 0) { alert('No hay paradas cercanas a tu ubicación (radio: 300 metros).'); return; }
             data.nearby_stops.forEach((stop, idx) => {
                 if (!stop.geometry || !Array.isArray(stop.geometry.coordinates)) return;
                 const stopLat = stop.geometry.coordinates[1], stopLon = stop.geometry.coordinates[0];
