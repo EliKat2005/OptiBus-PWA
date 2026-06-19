@@ -24,44 +24,36 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Panel Lateral con lista de rutas y paradas -->
+    <!-- Panel Lateral -->
     <div id="side-panel">
         <div id="panel-header">
             <span>OptiBus</span>
-            <button id="dark-mode-toggle" title="Modo oscuro" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer">🌙</button>
+            <button id="dark-mode-toggle" title="Modo oscuro" aria-label="Alternar modo oscuro">🌙</button>
         </div>
         <!-- Barra de búsqueda de paradas -->
         <div id="search-bar">
             <div class="search-input-wrapper">
                 <span class="search-icon">🔍</span>
                 <input type="text" id="search-input" placeholder="Buscar parada o ruta…" autocomplete="off">
-                <button id="search-clear" class="search-clear-btn" style="display:none">✕</button>
+                <button id="search-clear" class="search-clear-btn" style="display:none" aria-label="Limpiar búsqueda">✕</button>
             </div>
             <div id="search-results" class="search-results-dropdown"></div>
         </div>
-        <!-- Chips de filtro de rutas -->
+        <!-- Chips de filtro de rutas (única vista de rutas) -->
         <div id="route-filter-chips"></div>
-        <!-- Header de detalle de ruta (visible solo al seleccionar una ruta) -->
-        <div id="route-detail-header" style="display:none">
-            <button id="route-detail-back" title="Volver a todas las rutas">←</button>
-            <span id="route-detail-name"></span>
-            <span id="route-detail-badge" class="filter-chip active" style="font-size:10px;padding:2px 8px"></span>
-        </div>
-        <!-- Lista de rutas -->
-        <div id="routeList">
-            <div class="empty-state">Cargando rutas…</div>
-        </div>
+        <!-- Favoritos -->
         <div id="favorites-section">
             <div class="section-header">⭐ Favoritos</div>
             <div id="favorites-list"></div>
         </div>
+        <!-- Panel inferior: detalles de paradas de la ruta seleccionada -->
         <div id="stopList">
             <div class="empty-state" id="stopList-empty">Selecciona una ruta para ver sus paradas</div>
         </div>
     </div>
 
     <!-- Botón toggle del panel (mostrar/ocultar) -->
-    <button id="btn-toggle-panel" title="Mostrar / Ocultar panel">☰</button>
+    <button id="btn-toggle-panel" title="Mostrar / Ocultar panel" aria-label="Toggle panel">☰</button>
 
     <!-- Indicador de estado de conexión WebSocket -->
     <div id="connection-status" class="connection-status lost">
@@ -69,10 +61,10 @@
     </div>
 
     <!-- Botón flotante para GPS (encontrar paradas cercanas) -->
-    <button id="btn-gps" title="Encontrar mi parada cercana">📍</button>
+    <button id="btn-gps" title="Encontrar mi parada cercana" aria-label="Buscar paradas cercanas">📍</button>
     
     <!-- Botón flotante para recargar app (limpiar caché) -->
-    <button id="btn-refresh" title="Recargar App y limpiar Caché">🔄</button>
+    <button id="btn-refresh" title="Recargar App y limpiar Caché" aria-label="Recargar">🔄</button>
     
     <!-- Mapa Leaflet -->
     <div id="map"></div>

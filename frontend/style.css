@@ -1,6 +1,5 @@
 /* ======================================================================
-   OptiBus-PWA v0.5.0 — Tema Profesional DevSecOps
-   Panel lateral, marcadores SVG, popups estilizados, transiciones
+   OptiBus-PWA v1.0 — Tema Profesional con Dark Mode y Mobile-First
    ====================================================================== */
 
 /* ── Reset y Base ── */
@@ -11,6 +10,7 @@
     --primary-dark: #1d4ed8;
     --bg-panel: #ffffff;
     --bg-panel-hover: #f8fafc;
+    --bg-body: #0f172a;
     --text: #1e293b;
     --text-muted: #64748b;
     --border: #e2e8f0;
@@ -19,10 +19,21 @@
     --transition: 0.2s ease;
 }
 
+/* ── Dark Mode ── */
+body.dark {
+    --bg-panel: #1e293b;
+    --bg-panel-hover: #334155;
+    --bg-body: #0f172a;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --border: #334155;
+    --shadow: 0 4px 24px rgba(0, 0, 0, 0.40);
+}
+
 body, html {
     width: 100%; height: 100%; overflow: hidden;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    background: #0f172a;
+    background: var(--bg-body);
     color: var(--text);
 }
 
@@ -52,7 +63,7 @@ body, html {
 }
 
 #panel-header {
-    padding: 12px 16px;
+    padding: 10px 16px;
     background: linear-gradient(135deg, #1e293b, #334155);
     color: #fff;
     font-weight: 700;
@@ -61,21 +72,24 @@ body, html {
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
+    gap: 8px;
 }
 #panel-header span { letter-spacing: -0.3px; }
 
-#routeList {
-    flex: 1 1 auto;
-    overflow-y: auto;
-    padding: 8px;
-    max-height: 300px;
+#dark-mode-toggle {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px 8px;
+    transition: background var(--transition);
+    line-height: 1;
+    flex-shrink: 0;
 }
-#stopList {
-    flex: 1 1 auto;
-    overflow-y: auto;
-    padding: 8px;
-    border-top: 2px solid var(--border);
-    max-height: 350px;
+#dark-mode-toggle:hover {
+    background: rgba(255,255,255,0.25);
 }
 
 /* ── Search Bar ── */
@@ -98,11 +112,7 @@ body, html {
     border-color: var(--primary);
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
-.search-icon {
-    font-size: 14px;
-    margin-right: 8px;
-    flex-shrink: 0;
-}
+.search-icon { font-size: 14px; margin-right: 8px; flex-shrink: 0; }
 #search-input {
     flex: 1;
     border: none;
@@ -113,286 +123,119 @@ body, html {
     color: var(--text);
     outline: none;
 }
-#search-input::placeholder {
-    color: var(--text-muted);
-    opacity: 0.7;
-}
+#search-input::placeholder { color: var(--text-muted); opacity: 0.7; }
 .search-clear-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 14px;
-    color: var(--text-muted);
-    padding: 4px;
-    border-radius: 50%;
+    background: none; border: none; cursor: pointer;
+    font-size: 14px; color: var(--text-muted);
+    padding: 4px; border-radius: 50%;
     transition: background var(--transition);
 }
 .search-clear-btn:hover { background: var(--border); }
 
 /* ── Search Results Dropdown ── */
 .search-results-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 8px; right: 8px;
+    position: absolute; top: 100%; left: 8px; right: 8px;
     background: var(--bg-panel);
     border: 1px solid var(--border);
     border-radius: 0 0 10px 10px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-    max-height: 220px;
-    overflow-y: auto;
-    z-index: 2000;
-    display: none;
+    max-height: 220px; overflow-y: auto;
+    z-index: 2000; display: none;
 }
-.search-results-dropdown.show {
-    display: block;
-}
+.search-results-dropdown.show { display: block; }
 .search-result-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; cursor: pointer;
     transition: background var(--transition);
     border-bottom: 1px solid var(--border);
 }
 .search-result-item:last-child { border-bottom: none; }
 .search-result-item:hover { background: var(--bg-panel-hover); }
-.search-result-item .result-icon {
-    font-size: 18px;
-    flex-shrink: 0;
-}
-.search-result-item .result-info {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
+.search-result-item .result-icon { font-size: 18px; flex-shrink: 0; }
+.search-result-item .result-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .search-result-item .result-name {
-    font-weight: 600;
-    font-size: 13px;
-    color: var(--text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-weight: 600; font-size: 13px; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.search-result-item .result-sub {
-    font-size: 11px;
-    color: var(--text-muted);
-}
+.search-result-item .result-sub { font-size: 11px; color: var(--text-muted); }
 
 /* ── Chips de filtro de rutas ── */
 #route-filter-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 8px 8px 4px 8px;
-    flex-shrink: 0;
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 10px 8px 6px 8px; flex-shrink: 0;
 }
 .filter-chip {
-    padding: 4px 12px;
-    border-radius: 16px;
+    padding: 5px 14px; border-radius: 16px;
     border: 1.5px solid var(--border);
     background: var(--bg-panel);
     color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 12px; font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
-    white-space: nowrap;
-    user-select: none;
+    white-space: nowrap; user-select: none;
 }
-.filter-chip:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-}
+.filter-chip:hover { border-color: var(--primary); color: var(--primary); }
 .filter-chip.active {
     background: var(--primary);
     border-color: var(--primary);
-    color: #fff;
-    font-weight: 600;
+    color: #fff; font-weight: 600;
 }
 .filter-chip .chip-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 4px;
-}
-
-/* ── Route Detail Header ── */
-#route-detail-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    background: var(--bg-panel-hover);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-    animation: slideDown 0.2s ease;
-}
-@keyframes slideDown {
-    from { opacity: 0; transform: translateY(-8px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-#route-detail-back {
-    width: 28px; height: 28px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-panel);
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 700;
-    display: flex; align-items: center; justify-content: center;
-    transition: background var(--transition);
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
-#route-detail-back:hover { background: var(--border); color: var(--text); }
-#route-detail-name {
-    font-weight: 700;
-    font-size: 14px;
-    color: var(--text);
-    flex: 1;
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; margin-right: 4px;
 }
 
 /* ── Favorites Section ── */
 #favorites-section {
     flex-shrink: 0;
     border-top: 2px solid var(--border);
-    padding: 8px;
-    display: none;
+    padding: 8px; display: none;
 }
-#favorites-section.has-favorites {
-    display: block;
-}
+#favorites-section.has-favorites { display: block; }
 .section-header {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    font-size: 11px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
     padding: 4px 4px 6px;
 }
 
-#panel-header::before {
-    content: '🚌';
-    margin-right: 8px;
+/* ── Stop List (panel inferior) ── */
+#stopList {
+    flex: 1 1 auto; overflow-y: auto;
+    padding: 8px; border-top: 2px solid var(--border);
+    max-height: 350px;
 }
-
-/* ── Items de Ruta ── */
-.route-list-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background var(--transition), box-shadow var(--transition);
-    margin-bottom: 4px;
+#stopList .stop-list-title {
+    font-size: 13px; font-weight: 700; color: var(--text);
+    padding: 6px 12px 2px;
 }
-.route-list-item:hover {
-    background: var(--bg-panel-hover);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-}
-.route-list-item.active {
-    background: #eff6ff;
-    box-shadow: inset 0 0 0 2px var(--primary);
-}
-.route-color-dot {
-    width: 14px; height: 14px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    box-shadow: 0 0 0 2px rgba(0,0,0,0.08);
-}
-.route-info {
-    flex: 1; min-width: 0;
-    display: flex; flex-direction: column;
-}
-.route-info strong {
-    font-size: 14px; font-weight: 600;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    color: var(--text);
-}
-.route-info small {
-    font-size: 11px; color: var(--text-muted);
-}
-.route-actions {
-    display: flex; gap: 4px; flex-shrink: 0;
-}
-.btn-icon {
-    width: 28px; height: 28px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: #fff;
-    cursor: pointer;
-    font-size: 14px;
-    display: flex; align-items: center; justify-content: center;
-    transition: background var(--transition);
-    color: var(--text-muted);
-}
-.btn-icon:hover { background: #f1f5f9; color: var(--text); }
 
 /* ── Items de Parada ── */
-.stop-list-header {
-    padding: 8px 12px 4px;
-    font-size: 12px; font-weight: 700;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
 .stop-list-item {
     display: flex; align-items: center; gap: 10px;
-    padding: 8px 12px;
-    border-radius: 6px;
+    padding: 8px 12px; border-radius: 6px;
     cursor: pointer;
     transition: background var(--transition);
 }
 .stop-list-item:hover { background: var(--bg-panel-hover); }
 .stop-list-number {
-    width: 22px; height: 22px;
-    border-radius: 50%;
+    width: 22px; height: 22px; border-radius: 50%;
     color: #fff; font-size: 11px; font-weight: 700;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
 }
-.stop-list-name {
-    flex: 1; font-size: 13px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.stop-list-dist {
-    font-size: 11px; color: var(--text-muted);
-    flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
-}
+.stop-list-name { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stop-list-dist { font-size: 11px; color: var(--text-muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 
 /* ── Marcador de Parada (DivIcon) ── */
 .stop-marker {
-    position: relative;
-    width: 28px; height: 28px;
-    background: var(--color);
-    border: 3px solid #fff;
-    border-radius: 50% 50% 50% 0;
-    transform: rotate(-45deg);
+    position: relative; width: 28px; height: 28px;
+    background: var(--color); border: 3px solid #fff;
+    border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
     box-shadow: 0 2px 8px rgba(0,0,0,0.25);
     display: flex; align-items: center; justify-content: center;
 }
-.stop-number {
-    transform: rotate(45deg);
-    color: #fff; font-size: 11px; font-weight: 800;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-}
-.stop-pulse {
-    position: absolute;
-    width: 100%; height: 100%;
-    border-radius: inherit;
-    background: inherit;
-    opacity: 0;
-    animation: pulse-ring 2s ease-out infinite;
-}
+.stop-number { transform: rotate(45deg); color: #fff; font-size: 11px; font-weight: 800; text-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+.stop-pulse { position: absolute; width: 100%; height: 100%; border-radius: inherit; background: inherit; opacity: 0; animation: pulse-ring 2s ease-out infinite; }
 @keyframes pulse-ring {
     0% { transform: scale(1); opacity: 0.4; }
     100% { transform: scale(2.2); opacity: 0; }
@@ -400,155 +243,79 @@ body, html {
 
 /* ── Marcador de Bus (DivIcon SVG) ── */
 .bus-marker {
-    position: relative;
-    width: 36px; height: 36px;
+    position: relative; width: 36px; height: 36px;
     filter: drop-shadow(0 3px 6px rgba(0,0,0,0.3));
     transition: transform 0.3s ease;
 }
 .bus-id-label {
-    position: absolute;
-    bottom: -14px; left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,0.7);
-    color: #fff;
-    font-size: 9px; font-weight: 600;
-    padding: 1px 6px;
-    border-radius: 3px;
-    white-space: nowrap;
+    position: absolute; bottom: -14px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.7); color: #fff; font-size: 9px; font-weight: 600;
+    padding: 1px 6px; border-radius: 3px; white-space: nowrap;
 }
-.bus-icon {
-    background: transparent !important;
-    border: none !important;
-}
+.bus-icon { background: transparent !important; border: none !important; }
 
 /* ── Flechas direccionales ── */
-.route-arrow {
-    font-size: 14px;
-    color: var(--color);
-    text-shadow: 0 0 3px rgba(255,255,255,0.8);
-    font-weight: bold;
-}
-.route-arrow-icon {
-    background: transparent !important;
-    border: none !important;
-}
+.route-arrow { font-size: 14px; color: var(--color); text-shadow: 0 0 3px rgba(255,255,255,0.8); font-weight: bold; }
+.route-arrow-icon { background: transparent !important; border: none !important; }
 
 /* ── Popups ── */
-.custom-popup .leaflet-popup-content-wrapper {
-    border-radius: 10px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-    padding: 4px;
-}
-.custom-popup .leaflet-popup-content {
-    margin: 8px 12px;
-    font-family: inherit;
-    line-height: 1.5;
-}
-.stop-popup h3, .bus-popup h3 {
-    font-size: 14px; font-weight: 700;
-    margin-bottom: 6px; color: var(--text);
-}
-.popup-info {
-    display: flex; flex-direction: column; gap: 2px;
-    font-size: 12px; color: var(--text-muted);
-}
+.custom-popup .leaflet-popup-content-wrapper { border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); padding: 4px; }
+.custom-popup .leaflet-popup-content { margin: 8px 12px; font-family: inherit; line-height: 1.5; }
+.stop-popup h3, .bus-popup h3 { font-size: 14px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+.popup-info { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--text-muted); }
 
 /* ── Tooltips ── */
 .route-tooltip, .stop-tooltip {
-    background: rgba(15, 23, 42, 0.9) !important;
-    border: none !important;
-    border-radius: 6px !important;
-    color: #fff !important;
-    font-size: 12px !important;
-    padding: 4px 10px !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+    background: rgba(15, 23, 42, 0.9) !important; border: none !important;
+    border-radius: 6px !important; color: #fff !important; font-size: 12px !important;
+    padding: 4px 10px !important; box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
 }
-.route-tooltip::before, .stop-tooltip::before {
-    border-top-color: rgba(15, 23, 42, 0.9) !important;
-}
+.route-tooltip::before, .stop-tooltip::before { border-top-color: rgba(15, 23, 42, 0.9) !important; }
 
 /* ── Indicador de Conexión (toast superior) ── */
 #connection-status {
-    position: absolute;
-    top: 12px; left: 50%;
-    transform: translateX(-50%);
-    z-index: 1100;
-    padding: 8px 20px;
-    border-radius: 24px;
-    font-size: 13px; font-weight: 600;
-    pointer-events: none;
-    transition: opacity 0.4s ease;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 1100; padding: 8px 20px; border-radius: 24px;
+    font-size: 13px; font-weight: 600; pointer-events: none;
+    transition: opacity 0.4s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
-.connection-status.connected {
-    background: #065f46; color: #d1fae5;
-}
-.connection-status.lost {
-    background: #7f1d1d; color: #fecaca;
-}
+.connection-status.connected { background: #065f46; color: #d1fae5; }
+.connection-status.lost { background: #7f1d1d; color: #fecaca; }
 
 /* ── Mi ubicación (animación) ── */
 .my-location-dot {
-    width: 20px; height: 20px;
-    background: var(--primary);
-    border: 3px solid #fff;
-    border-radius: 50%;
+    width: 20px; height: 20px; background: var(--primary);
+    border: 3px solid #fff; border-radius: 50%;
     box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.3);
     animation: pulse-ring 1.5s ease-out infinite;
 }
-.my-location-icon {
-    background: transparent !important;
-    border: none !important;
-}
+.my-location-icon { background: transparent !important; border: none !important; }
 
 /* ── Botones Flotantes ── */
 #btn-gps, #btn-refresh, #btn-toggle-panel {
-    position: absolute;
-    z-index: 1000;
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
+    position: absolute; z-index: 1000; border: none; border-radius: 50%;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
     box-shadow: 0 4px 12px rgba(0,0,0,0.25);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
     color: #fff;
 }
 #btn-gps:hover, #btn-refresh:hover, #btn-toggle-panel:hover {
-    transform: scale(1.08);
-    box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+    transform: scale(1.08); box-shadow: 0 6px 16px rgba(0,0,0,0.3);
 }
-#btn-gps:active, #btn-refresh:active, #btn-toggle-panel:active {
-    transform: scale(0.95);
-}
+#btn-gps:active, #btn-refresh:active, #btn-toggle-panel:active { transform: scale(0.95); }
 
-/* Botón GPS */
-#btn-gps {
-    bottom: 24px; right: 24px;
-    width: 56px; height: 56px;
-    background: var(--primary);
-    font-size: 24px;
-}
-#btn-gps.searching {
-    animation: pulse-btn 1s infinite;
-    background: #f59e0b;
-}
+#btn-gps { bottom: 24px; right: 24px; width: 56px; height: 56px; background: var(--primary); font-size: 24px; }
+#btn-gps.searching { animation: pulse-btn 1s infinite; background: #f59e0b; }
 @keyframes pulse-btn {
     0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
     70% { box-shadow: 0 0 0 14px rgba(245, 158, 11, 0); }
     100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
 }
 
-/* Botón Refresh */
-#btn-refresh {
-    bottom: 92px; right: 24px;
-    width: 44px; height: 44px;
-    background: #475569;
-    font-size: 18px;
-}
+#btn-refresh { bottom: 92px; right: 24px; width: 44px; height: 44px; background: #475569; font-size: 18px; }
 
-/* Botón Toggle Panel */
 #btn-toggle-panel {
-    top: 16px; left: 324px;
+    top: 14px; left: 324px;
     width: 32px; height: 32px;
     background: var(--bg-panel);
     color: var(--text);
@@ -556,69 +323,40 @@ body, html {
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     transition: left var(--transition);
 }
-#side-panel.collapsed ~ #btn-toggle-panel {
-    left: 12px;
-}
+#side-panel.collapsed ~ #btn-toggle-panel { left: 12px; }
 
 /* ── Estado vacío ── */
-.empty-state {
-    padding: 24px 16px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 14px;
-}
+.empty-state { padding: 24px 16px; text-align: center; color: var(--text-muted); font-size: 14px; }
 
 /* ── Scrollbar personalizado ── */
-#routeList::-webkit-scrollbar,
-#stopList::-webkit-scrollbar {
-    width: 5px;
-}
-#routeList::-webkit-scrollbar-track,
-#stopList::-webkit-scrollbar-track {
-    background: transparent;
-}
-#routeList::-webkit-scrollbar-thumb,
-#stopList::-webkit-scrollbar-thumb {
-    background: var(--border);
-    border-radius: 10px;
-}
-#routeList::-webkit-scrollbar-thumb:hover,
-#stopList::-webkit-scrollbar-thumb:hover {
-    background: #cbd5e1;
-}
+#stopList::-webkit-scrollbar { width: 5px; }
+#stopList::-webkit-scrollbar-track { background: transparent; }
+#stopList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+#stopList::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
 
 /* ── Controles Leaflet (zoom) ── */
 .leaflet-control-zoom {
-    border: none !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
-    border-radius: 8px !important;
-    overflow: hidden;
+    border: none !important; box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+    border-radius: 8px !important; overflow: hidden;
 }
 .leaflet-control-zoom a {
-    color: var(--text) !important;
-    background: #fff !important;
-    width: 34px !important;
-    height: 34px !important;
-    line-height: 34px !important;
-    font-size: 18px !important;
-    transition: background var(--transition);
+    color: var(--text) !important; background: #fff !important;
+    width: 34px !important; height: 34px !important; line-height: 34px !important;
+    font-size: 18px !important; transition: background var(--transition);
 }
-.leaflet-control-zoom a:hover {
-    background: var(--bg-panel-hover) !important;
-}
+.leaflet-control-zoom a:hover { background: var(--bg-panel-hover) !important; }
 
 /* ── Responsive (móvil) ── */
 @media (max-width: 640px) {
     #side-panel {
-        width: calc(100vw - 24px);
-        left: 12px; right: 12px;
-        max-height: 40vh;
+        width: calc(100vw - 16px);
+        left: 8px; right: 8px;
+        max-height: 45vh;
     }
     #btn-toggle-panel {
-        left: auto; right: 12px; top: 16px;
+        top: 14px; right: 12px; left: auto;
     }
-    #side-panel.collapsed ~ #btn-toggle-panel {
-        left: auto; right: 12px;
+    #panel-header {
+        padding-right: 44px; /* espacio para el toggle que flota encima */
     }
-    .route-actions { display: none; }
 }
