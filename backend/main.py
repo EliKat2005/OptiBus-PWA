@@ -424,6 +424,18 @@ async def health_check():
 
 @app.get("/api/routes")
 async def get_routes(db: AsyncSession = Depends(get_db)):
+    """Obtiene todas las rutas con paradas. Cacheado en Redis por 60s."""
+    # --- Intento de caché Redis ---
+    redis = await get_redis()
+    if redis:
+        try:
+            cached = await redis.get("cache:routes")
+            if cached:
+                logger.debug("Routes cache HIT (Redis)")
+                return json.loads(cached)
+        except Exception as e:
+            logger.debug(f"Redis cache miss: {e}")
+    
     # Cargar rutas con sus paradas en una sola consulta (eager loading)
     result = await db.execute(
         select(models.Route).options(
@@ -465,7 +477,16 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
             "geometry": json.loads(geojson_str)
         })
     
-    return {"type": "FeatureCollection", "features": features}
+    response = {"type": "FeatureCollection", "features": features}
+    
+    # Guardar en caché Redis por 60 segundos
+    if redis:
+        try:
+            await redis.setex("cache:routes", 60, json.dumps(response, default=str))
+        except Exception:
+            pass
+    
+    return response
 
 @app.get("/api/stops/nearby")
 async def get_nearby_stops(
@@ -1196,3 +1217,135 @@ async def record_stop(
 @app.get("/api/simulator/status")
 async def simulator_status(_auth: None = Depends(verify_api_key)):
     return {"simulator_enabled": os.getenv("ENABLE_BUS_SIMULATOR", "false").lower() == "true", "active_ws_connections": len(manager.active_connections)}
+
+# --- Ruteo Inteligente: Planificador de viajes ---
+@app.post("/api/routes/plan")
+async def plan_route(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Encuentra la mejor ruta entre dos paradas.
+    Input: { from_stop_id, to_stop_id } o { from_name, to_name }
+    Output: { plan: [{ route_name, route_id, board_stop, alight_stop, stops_count }], total_transfers }
+    """
+    body = await request.json()
+    from_id = body.get("from_stop_id")
+    to_id = body.get("to_stop_id")
+    from_name = body.get("from_name")
+    to_name = body.get("to_name")
+
+    # Resolver IDs si vienen nombres
+    if (from_id is None and from_name) or (to_id is None and to_name):
+        result = await db.execute(
+            select(models.Stop.id, models.Stop.name)
+            .where(models.Stop.name.in_([from_name, to_name]) if from_name and to_name else True)
+        )
+        stops_by_name = {r.name: r.id for r in result}
+        if from_name and from_id is None:
+            from_id = stops_by_name.get(from_name)
+        if to_name and to_id is None:
+            to_id = stops_by_name.get(to_name)
+
+    if from_id is None or to_id is None:
+        return JSONResponse(status_code=400, content={"detail": "from_stop_id y to_stop_id requeridos (o nombres válidos)"})
+
+    if from_id == to_id:
+        return JSONResponse(status_code=400, content={"detail": "Origen y destino son la misma parada"})
+
+    # Obtener rutas de cada parada
+    from_result = await db.execute(
+        select(
+            models.Stop.route_id,
+            models.Route.name.label("route_name"),
+            models.Stop.id.label("stop_id"),
+            models.Stop.name.label("stop_name")
+        )
+        .join(models.Route, models.Stop.route_id == models.Route.id)
+        .where(models.Stop.id.in_([from_id, to_id]))
+    )
+    stop_routes: dict = {}
+    for r in from_result:
+        rid = r.route_id
+        if rid not in stop_routes:
+            stop_routes[rid] = {"route_name": r.route_name, "stops": {}}
+        stop_routes[rid]["stops"][r.stop_id] = r.stop_name
+
+    # Buscar ruta directa (misma ruta para ambas paradas)
+    direct_route = None
+    for route_id, data in stop_routes.items():
+        if from_id in data["stops"] and to_id in data["stops"]:
+            # Encontrar posición de las paradas en la ruta
+            stops_order = await db.execute(
+                select(models.Stop.id).where(models.Stop.route_id == route_id).order_by(models.Stop.id)
+            )
+            ordered = [s.id for s in stops_order]
+            if from_id in ordered and to_id in ordered:
+                pos_from = ordered.index(from_id)
+                pos_to = ordered.index(to_id)
+                if direct_route is None or abs(pos_to - pos_from) < direct_route.get("distance", 9999):
+                    direct_route = {
+                        "route_id": route_id,
+                        "route_name": data["route_name"],
+                        "board_stop": data["stops"][from_id],
+                        "alight_stop": data["stops"][to_id],
+                        "stops_count": abs(pos_to - pos_from),
+                        "direction": "forward" if pos_to > pos_from else "backward"
+                    }
+
+    if direct_route:
+        return {
+            "type": "direct",
+            "plan": [direct_route],
+            "total_stops": direct_route["stops_count"],
+            "message": f"Toma la ruta '{direct_route['route_name']}' en '{direct_route['board_stop']}' y bájate en '{direct_route['alight_stop']}' ({direct_route['stops_count']} paradas)"
+        }
+
+    # Buscar transbordo: rutas que comparten al menos una parada
+    from_routes = [rid for rid, data in stop_routes.items() if from_id in data["stops"]]
+    to_routes = [rid for rid, data in stop_routes.items() if to_id in data["stops"]]
+
+    if not from_routes or not to_routes:
+        return JSONResponse(status_code=404, content={"detail": "No se encontraron rutas para estas paradas"})
+
+    # Encontrar paradas comunes entre rutas de origen y destino
+    for fr in from_routes:
+        for tr in to_routes:
+            if fr == tr:
+                continue
+            fr_stops = await db.execute(
+                select(models.Stop.id, models.Stop.name).where(models.Stop.route_id == fr)
+            )
+            fr_stop_set = {s.id: s.name for s in fr_stops}
+            tr_stops = await db.execute(
+                select(models.Stop.id, models.Stop.name).where(models.Stop.route_id == tr)
+            )
+            tr_stop_set = {s.id: s.name for s in tr_stops}
+
+            common = set(fr_stop_set.keys()) & set(tr_stop_set.keys())
+            if common:
+                transfer_stop_id = min(common)
+                return {
+                    "type": "transfer",
+                    "plan": [
+                        {
+                            "route_id": fr,
+                            "route_name": stop_routes[fr]["route_name"],
+                            "board_stop": stop_routes[fr]["stops"][from_id],
+                            "alight_stop": fr_stop_set[transfer_stop_id],
+                            "transfer": True
+                        },
+                        {
+                            "route_id": tr,
+                            "route_name": stop_routes[tr]["route_name"],
+                            "board_stop": tr_stop_set[transfer_stop_id],
+                            "alight_stop": stop_routes[tr]["stops"][to_id],
+                            "transfer": False
+                        }
+                    ],
+                    "total_transfers": 1,
+                    "transfer_stop": fr_stop_set[transfer_stop_id],
+                    "message": f"Toma '{stop_routes[fr]['route_name']}' en '{stop_routes[fr]['stops'][from_id]}', transborda en '{fr_stop_set[transfer_stop_id]}', y toma '{stop_routes[tr]['route_name']}' hasta '{stop_routes[tr]['stops'][to_id]}'"
+                }
+
+    return JSONResponse(status_code=404, content={"detail": "No se encontró conexión entre estas paradas (sin transbordo común)"})
