@@ -136,13 +136,20 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 def hash_password(password: str) -> str:
-    """Hash SHA-256 simple con salt. En producción usar bcrypt/passlib."""
-    salt = token_urlsafe(16)
-    hashed = hashlib.sha256(f"{salt}:{password}".encode()).hexdigest()
-    return f"{salt}:{hashed}"
+    """Hash bcrypt con salt automático (seguridad profesional)."""
+    import bcrypt
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verifica contraseña contra hash almacenado."""
+    """Verifica contraseña contra hash bcrypt o SHA-256 (retrocompatibilidad)."""
+    if password_hash.startswith("$2b$") or password_hash.startswith("$2a$"):
+        import bcrypt
+        try:
+            return bcrypt.checkpw(password.encode(), password_hash.encode())
+        except Exception:
+            return False
+    
+    # Retrocompatibilidad con hashes SHA-256 antiguos
     try:
         salt, hashed = password_hash.split(":", 1)
         return compare_digest(
