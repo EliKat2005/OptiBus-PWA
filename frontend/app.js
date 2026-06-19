@@ -173,14 +173,16 @@ function showRouteDetail(routeId) {
     // ── Atenuar otras rutas ──
     Object.entries(routeLayers).forEach(([id, lg]) => {
         if (parseInt(id) === routeId) {
-            lg.setStyle({ opacity: 1 });
             lg.eachLayer(l => {
-                if (l instanceof L.Polyline && l.options.color) l.setStyle({ weight: CONFIG.routeWeight + 2 });
+                if (l instanceof L.Polyline && l.options.color) {
+                    l.setStyle({ opacity: 1, weight: CONFIG.routeWeight + 2 });
+                }
             });
         } else {
-            lg.setStyle({ opacity: 0.08 });
             lg.eachLayer(l => {
-                if (l instanceof L.Polyline && l.options.color) l.setStyle({ weight: 1 });
+                if (l instanceof L.Polyline && l.options.color) {
+                    l.setStyle({ opacity: 0.08, weight: 1 });
+                }
             });
         }
     });
@@ -230,10 +232,11 @@ function showRouteOverview() {
     activeFilterRouteId = null;
 
     // ── Restaurar rutas ──
-    Object.values(routeLayers).forEach(lg => lg.setStyle({ opacity: CONFIG.routeOpacity }));
-    Object.keys(routeLayers).forEach(id => {
-        routeLayers[id].eachLayer(l => {
-            if (l instanceof L.Polyline && l.options.color) l.setStyle({ weight: CONFIG.routeWeight });
+    Object.values(routeLayers).forEach(lg => {
+        lg.eachLayer(l => {
+            if (l instanceof L.Polyline && l.options.color) {
+                l.setStyle({ opacity: CONFIG.routeOpacity, weight: CONFIG.routeWeight });
+            }
         });
     });
 
