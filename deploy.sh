@@ -29,16 +29,32 @@ info() { echo -e "${CYAN}[$(date +'%H:%M:%S')] ℹ️  $1${NC}"; }
 # Validación de pre-requisitos
 # ──────────────────────────────────────────────
 validate_env() {
+    # ── Pre-flight 1: Podman instalado y respondiendo ──
     if ! command -v podman &>/dev/null; then
-        err "Podman no está instalado. Instálalo: sudo apt install podman podman-compose"
+        err "Podman no está instalado. Ejecuta: sudo apt install podman podman-compose"
+        exit 1
+    fi
+    if ! podman info &>/dev/null; then
+        err "Podman está instalado pero no responde. Verifica: podman info"
         exit 1
     fi
 
+    # ── Pre-flight 2: .env existe ──
     if [ ! -f .env ]; then
-        warn ".env no encontrado. Copiando desde .env.example..."
-        cp .env.example .env
-        warn "⚠️  EDITA .env AHORA con tus valores reales antes de continuar."
-        warn "   nano .env"
+        err "Archivo .env no existe."
+        echo -e "${RED}   Ejecuta: ./scripts/generate_env.sh${NC}"
+        echo -e "${RED}   Luego edita tu API Key con: nano .env${NC}"
+        exit 1
+    fi
+
+    # ── Pre-flight 3: Puertos no privilegiados ──
+    local unpriv_port
+    unpriv_port=$(sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null || echo "1024")
+    if [ "$unpriv_port" -gt 80 ]; then
+        err "net.ipv4.ip_unprivileged_port_start = $unpriv_port (debe ser <= 80)"
+        echo -e "${RED}   Ejecuta manualmente:${NC}"
+        echo -e "${RED}   sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80${NC}"
+        echo -e "${RED}   echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/99-rootless-ports.conf${NC}"
         exit 1
     fi
 
@@ -51,7 +67,7 @@ validate_env() {
     fi
 
     if [ -z "$POSTGRES_PASSWORD" ] || [ "$POSTGRES_PASSWORD" = "CHANGEME_SECURE_PASSWORD" ]; then
-        err "POSTGRES_PASSWORD no configurada o usa el valor por defecto. Edita .env"
+        err "POSTGRES_PASSWORD no configurada o usa el valor por defecto. Ejecuta: ./scripts/generate_env.sh"
         exit 1
     fi
 

@@ -10,52 +10,81 @@ El sistema está dividido en:
 - **Frontend**: HTML/JS/CSS vanilla (Aplicación Web estática), servida mediante Caddy.
 - **Infraestructura**: Despliegue orquestado 100% con Docker Compose / Podman Compose.
 
-## Requisitos Previos
+## 🚀 Despliegue desde cero (Cold Start)
 
-- Tener instalado [Podman](https://podman.io/) y `podman-compose` (Recomendado bajo arquitecturas rootless/DevSecOps) o bien Docker.
-- Git instalado en tu máquina o servidor.
-- Puertos `80` (HTTP) y `443` (HTTPS) disponibles en tu firewall (NSG en Azure).
-
-## 🚀 Despliegue en Producción (Servidor Azure VM / VPS)
-
-OptiBus está diseñado bajo una arquitectura **DevSecOps** segura. Nuestro proxy Caddy se encarga de aislar la capa interna y generar tus certificados SSL dinámicamente usando tu dominio.
-
-### 1. Clonar y Configurar Entorno
-Entra a tu servidor virtual vía SSH y clona el proyecto:
+Flujo completo para provisionar una VM Debian 12/13 limpia:
 
 ```bash
-git clone https://github.com/TU_USUARIO/OptiBus-PWA.git
+# 1. Clonar el repositorio
+git clone https://github.com/EliKat2005/OptiBus-PWA.git
 cd OptiBus-PWA
-```
 
-Genera tu archivo de configuración seguro a partir de la plantilla y edítalo:
-```bash
-cp .env.example .env
-nano .env
-```
-> **⚠️ Importante**: Asegúrate de cambiar la variable `DOMAIN` por tu dominio real (Ej. `app.mi-dominio.com`) y colocar una contraseña fuerte en `POSTGRES_PASSWORD`.
+# 2. Instalar dependencias y configurar el host
+chmod +x scripts/*.sh
+./scripts/setup_host.sh
+# ⚠️ CIERRA sesión SSH y vuelve a conectarte (requerido por loginctl enable-linger)
 
-### 2. Despliegue Automatizado
-Asegúrate de haber apuntado el Récord 'A' de tu dominio a la IP pública de tu Azure VM. Luego, corre el script de despliegue principal:
+# 3. Generar secretos aleatorios y configurar API Key
+./scripts/generate_env.sh
+nano .env   # ← pega tu OPTIBUS_API_KEY (genera con: openssl rand -base64 32)
+            #    configura DOMAIN= si tienes dominio propio
 
-```bash
+# 4. Desplegar todos los servicios
 ./deploy.sh
+
+# 5. (Opcional) Ingerir rutas y paradas pre-grabadas
+#    Coloca archivos .gpx y .json en backend/seed_data/
+./scripts/seed_db.sh
 ```
 
-### 3. Poblar la Base de Datos (Primer Arránque)
-> El orden de ingesta es estricto. Las paradas dependen de la existencia de una ruta por las relaciones de Foreign Key en la DDBB espacia.
+> Después de `./deploy.sh`, los servicios tardan ~2-3 minutos en estar listos (la API compila dependencias).
 
-**Primero**, ingiere la ruta estructurada:
+## 🏗️ Arquitectura y Puertos
+
+| Contenedor | Puerto Interno | Expuesto a Internet | Descripción |
+|-----------|---------------|-------------------|-------------|
+| **Caddy** | 80, 443 | ✅ Sí (HTTP/HTTPS) | Proxy inverso + SSL automático (Let's Encrypt) |
+| **API (FastAPI)** | 8000 | ❌ Solo interno | Backend REST + WebSocket + `/metrics` |
+| **PostgreSQL + PostGIS** | 5432 | ❌ Solo interno | Base de datos geoespacial |
+| **Redis** | 6379 | ❌ Solo interno | Rate limiting distribuido |
+| **Prometheus** | 9090 | ❌ Solo interno | Recolección de métricas |
+| **Grafana** | 3000 | ❌ Solo interno | Dashboards de monitoreo |
+
+> **Acceso externo**: Solo Caddy (80/443) recibe tráfico de internet. Los demás servicios solo son accesibles desde `localhost` o mediante SSH tunnel.
+
+## 🚑 Troubleshooting
+
+### Error: `rootlessport cannot expose privileged port 443`
+
+**Causa**: Podman no tiene permiso para usar puertos < 1024.
+
+**Solución**:
 ```bash
-podman exec -it optibus_api python ingest_gpx.py data/ruta_ejemplo.gpx "Ruta Principal"
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/99-rootless-ports.conf
+podman-compose down && ./deploy.sh
 ```
 
-**Segundo**, ingiere las paradas del sistema:
+### Error: `sd-bus call: Interactive authentication required`
+
+**Causa**: `loginctl enable-linger` no se ejecutó o la sesión no se renovó.
+
+**Solución**:
 ```bash
-podman exec -it optibus_api python ingest_stops.py data/paradas_ejemplo.json
+sudo loginctl enable-linger $USER
+# CIERRA la sesión SSH y vuelve a conectarte
 ```
 
-Una vez completado de levantar todo, tu plataforma PWA en vivo está en **https://tulink.com**.
+### La PWA muestra "0 paradas" pero la BD tiene datos
+
+**Causa**: El Service Worker cachea una versión vieja de la PWA.
+
+**Solución**:
+1. Abre las DevTools del navegador (F12)
+2. Ve a Application > Service Workers
+3. Haz clic en "Unregister"
+4. Ve a Application > Storage > Clear site data
+5. Recarga la página
 
 
 ## 🔄 Actualizaciones y Mantenimiento Continúo (CI/CD Local)
