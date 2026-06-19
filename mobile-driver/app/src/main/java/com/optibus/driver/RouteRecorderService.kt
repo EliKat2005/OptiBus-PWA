@@ -141,8 +141,8 @@ class RouteRecorderService : Service(), LocationListener {
         isPaused = false
 
         val notification = buildNotification(
-            "Grabando: $routeName",
-            "Bus: $busId. Puntos: 0"
+            "Buscando señal GPS...",
+            "Esperando fix inicial (máx 30s)"
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -167,6 +167,7 @@ class RouteRecorderService : Service(), LocationListener {
                 val bestProvider = locationManager.getBestProvider(criteria, true)
                     ?: LocationManager.GPS_PROVIDER
 
+                // F3: Registrar listener ANTES de obtener el lastKnownLocation
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
                     GPS_INTERVAL_MS,
@@ -183,8 +184,41 @@ class RouteRecorderService : Service(), LocationListener {
                     )
                 }
 
-                locationManager.getLastKnownLocation(bestProvider)?.let {
-                    onLocationChanged(it)
+                // F3: Esperar primer fix GPS con timeout de 30 segundos
+                val lastKnown = locationManager.getLastKnownLocation(bestProvider)
+                if (lastKnown != null && lastKnown.time > 0 && (System.currentTimeMillis() - lastKnown.time) < 60_000L) {
+                    // LastKnownLocation reciente (< 60s) — lo usamos como punto de partida
+                    onLocationChanged(lastKnown)
+                    Log.i(TAG, "GPS fix obtenido desde lastKnownLocation: (${lastKnown.latitude}, ${lastKnown.longitude})")
+                } else {
+                    // No hay lastKnownLocation reciente — esperar el primer fix real
+                    val fixStartTime = System.currentTimeMillis()
+                    val maxWaitMs = 30_000L // 30 segundos de timeout
+                    Log.i(TAG, "Esperando primer fix GPS (timeout ${maxWaitMs / 1000}s)...")
+                    
+                    while (gpsPoints.isEmpty() && (System.currentTimeMillis() - fixStartTime) < maxWaitMs) {
+                        try {
+                            Thread.sleep(200)
+                        } catch (_: InterruptedException) {
+                            break
+                        }
+                    }
+                    
+                    if (gpsPoints.isEmpty()) {
+                        Log.w(TAG, "Timeout esperando fix GPS. Iniciando grabacion de todas formas.")
+                        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        nm.notify(NOTIFICATION_ID, buildNotification(
+                            "⚠️ Grabando sin GPS fijo: $routeName",
+                            "Puntos: 0"
+                        ))
+                    } else {
+                        Log.i(TAG, "Primer fix GPS obtenido tras ${System.currentTimeMillis() - fixStartTime}ms")
+                        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        nm.notify(NOTIFICATION_ID, buildNotification(
+                            "Grabando: $routeName",
+                            "Bus: $busId. Puntos: 1"
+                        ))
+                    }
                 }
 
                 Log.i(TAG, "GPS alta precision iniciado: ${GPS_INTERVAL_MS}ms (GPS + Network) - Bus: $busId")
@@ -324,6 +358,54 @@ class RouteRecorderService : Service(), LocationListener {
 
         Log.i(TAG, "Parada registrada: $stopName en (${last.latitude}, ${last.longitude})")
         sendStatsBroadcast()
+
+        // F4: Subir parada individual al backend en tiempo real
+        if (serverUrl.isNotBlank()) {
+            uploadStopToBackend(stop)
+        }
+    }
+
+    // F4: Sube una parada individual al backend inmediatamente al registrarla
+    private fun uploadStopToBackend(stop: StopPoint) {
+        thread(name = "OptiBusUploadStop") {
+            try {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+
+                val url = serverUrl.trimEnd('/') + "/api/stops/record"
+                val jsonBody = """
+                    {
+                        "bus_id": "${escapeJson(busId)}",
+                        "stop_name": "${escapeJson(stop.name)}",
+                        "lat": ${stop.lat},
+                        "lon": ${stop.lon},
+                        "elevation": ${stop.ele},
+                        "time": "${stop.time}",
+                        "route_name": "${escapeJson(routeName)}"
+                    }
+                """.trimIndent()
+
+                val requestBuilder = Request.Builder()
+                    .url(url)
+                    .post(jsonBody.toRequestBody("application/json".toMediaType()))
+
+                if (apiKey.isNotBlank()) {
+                    requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+                }
+
+                val response = client.newCall(requestBuilder.build()).execute()
+                if (response.isSuccessful) {
+                    Log.i(TAG, "Parada subida al backend: ${stop.name} (${response.code})")
+                } else {
+                    Log.w(TAG, "Backend rechazo parada: ${response.code} - ${response.body?.string()}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error subiendo parada al backend: ${e.message}")
+            }
+        }
     }
 
     private fun stopAndUpload() {
@@ -517,9 +599,28 @@ class RouteRecorderService : Service(), LocationListener {
     }
 
     private fun writeGpx(file: File) {
+        // F1: Ordenar puntos por timestamp (evita que GPS lento llegue después de Network)
+        val sortedPoints = gpsPoints.sortedBy { it.time }
+        // F2: Deducir duplicados consecutivos (misma lat+lon dentro de 1m)
+        val dedupedPoints = mutableListOf<GpsPoint>()
+        var lastDedupLat = Double.NaN
+        var lastDedupLon = Double.NaN
+        for (point in sortedPoints) {
+            if (lastDedupLat.isNaN() || haversineDistance(lastDedupLat, lastDedupLon, point.lat, point.lon) > 1.0) {
+                dedupedPoints.add(point)
+                lastDedupLat = point.lat
+                lastDedupLon = point.lon
+            }
+        }
+        if (dedupedPoints.size < 2) {
+            // No deduplicar si eliminamos casi todo; mejor quedarse con sorted
+            dedupedPoints.clear()
+            dedupedPoints.addAll(sortedPoints)
+        }
+
         FileWriter(file).use { writer ->
             writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-            writer.write("<gpx version=\"1.1\" creator=\"OptiBus Driver App v2.2\"\n")
+            writer.write("<gpx version=\"1.1\" creator=\"OptiBus Driver App v2.5\"\n")
             writer.write("     xmlns=\"http://www.topografix.com/GPX/1/1\"\n")
             writer.write("     xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n")
             writer.write("     xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd\">\n")
@@ -539,7 +640,7 @@ class RouteRecorderService : Service(), LocationListener {
             writer.write("</name>\n")
             writer.write("    <trkseg>\n")
 
-            for (point in gpsPoints) {
+            for (point in dedupedPoints) {
                 writer.write("      <trkpt lat=\"${point.lat}\" lon=\"${point.lon}\">\n")
                 if (point.ele != 0.0) {
                     writer.write("        <ele>${point.ele}</ele>\n")
@@ -646,6 +747,17 @@ class RouteRecorderService : Service(), LocationListener {
             locationManager.removeUpdates(this)
         } catch (_: Exception) {}
         super.onDestroy()
+    }
+
+    // F1: Distancia Haversine para deduplicación de puntos
+    private fun haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val R = 6371000.0 // radio Tierra en metros
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(dLat / 2).pow(2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                Math.sin(dLon / 2).pow(2)
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

@@ -1046,6 +1046,9 @@ async def upload_recorded_route(
     if len(raw_points) < 2:
         raise HTTPException(status_code=400, detail="Se requieren al menos 2 puntos GPS")
     
+    # F5: Ordenar puntos por timestamp antes de limpiar (el APK puede enviarlos desordenados)
+    raw_points.sort(key=lambda p: p[2])  # p[2] es el iso_time
+    
     # Limpiar y filtrar outliers usando gps_cleaner
     cleaned_points = clean_gps_track(raw_points, max_speed_kmh=max_speed_kmh)
     removed = len(raw_points) - len(cleaned_points)
@@ -1126,6 +1129,62 @@ async def upload_recorded_route(
             str(meta_path.relative_to(Path(__file__).parent))
         ]
     }
+
+# --- Parada individual (desde APK en tiempo real) ---
+@app.post("/api/stops/record")
+async def record_stop(
+    _auth: None = Depends(verify_api_key),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Recibe una parada individual grabada desde el APK (tiempo real)."""
+    body = await request.json()
+    bus_id = body.get("bus_id", "unknown")
+    stop_name = body.get("stop_name", "Parada")
+    lat = body.get("lat")
+    lon = body.get("lon")
+    elevation = body.get("elevation", 0.0)
+    stop_time = body.get("time", datetime.now(timezone.utc).isoformat())
+    route_name = body.get("route_name", "")
+
+    # Validaciones
+    if lat is None or lon is None:
+        return JSONResponse(status_code=400, content={"detail": "lat y lon requeridos"})
+    if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        return JSONResponse(status_code=400, content={"detail": "Coordenadas inválidas"})
+
+    try:
+        # Buscar o crear ruta
+        if route_name:
+            result = await db.execute(
+                select(models.Route).where(models.Route.name == route_name).limit(1)
+            )
+            route = result.scalar_one_or_none()
+        else:
+            route = None
+
+        # Guardar parada
+        stop_point = f"SRID=4326;POINT({lon} {lat})"
+        db.add(models.Stop(
+            name=str(stop_name)[:255],
+            route_id=route.id if route else None,
+            geom=func.ST_GeomFromText(stop_point, 4326)
+        ))
+        await db.commit()
+        
+        logger.info(f"Parada '{stop_name}' registrada vía API tiempo real (bus={bus_id}, lat={lat}, lon={lon})")
+        
+        # Broadcast a WebSocket
+        await manager.broadcast(json.dumps({
+            "type": "stop_recorded",
+            "stop": {"name": stop_name, "lat": lat, "lon": lon, "bus_id": bus_id, "route_name": route_name}
+        }))
+        
+        return {"status": "success", "stop_name": stop_name, "lat": lat, "lon": lon}
+    except Exception as e:
+        logger.error(f"Error registrando parada: {e}")
+        await db.rollback()
+        return JSONResponse(status_code=500, content={"detail": f"Error guardando parada: {str(e)}"})
 
 @app.get("/api/simulator/status")
 async def simulator_status(_auth: None = Depends(verify_api_key)):
