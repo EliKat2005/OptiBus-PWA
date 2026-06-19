@@ -49,7 +49,7 @@ validate_env() {
 
     # ── Pre-flight 3: Puertos no privilegiados ──
     local unpriv_port
-    unpriv_port=$(sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null || echo "1024")
+    unpriv_port=$(cat /proc/sys/net/ipv4/ip_unprivileged_port_start 2>/dev/null || echo "1024")
     if [ "$unpriv_port" -gt 80 ]; then
         err "net.ipv4.ip_unprivileged_port_start = $unpriv_port (debe ser <= 80)"
         echo -e "${RED}   Ejecuta manualmente:${NC}"
