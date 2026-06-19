@@ -28,9 +28,26 @@
     <div id="side-panel">
         <div id="panel-header">
             <span>OptiBus</span>
+            <button id="dark-mode-toggle" title="Modo oscuro" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer">🌙</button>
         </div>
+        <!-- Barra de búsqueda de paradas -->
+        <div id="search-bar">
+            <div class="search-input-wrapper">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="search-input" placeholder="Buscar parada o ruta…" autocomplete="off">
+                <button id="search-clear" class="search-clear-btn" style="display:none">✕</button>
+            </div>
+            <div id="search-results" class="search-results-dropdown"></div>
+        </div>
+        <!-- Chips de filtro de rutas -->
+        <div id="route-filter-chips"></div>
+        <!-- Lista de rutas -->
         <div id="routeList">
             <div class="empty-state">Cargando rutas…</div>
+        </div>
+        <div id="favorites-section">
+            <div class="section-header">⭐ Favoritos</div>
+            <div id="favorites-list"></div>
         </div>
         <div id="stopList"></div>
     </div>

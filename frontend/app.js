@@ -259,6 +259,11 @@ function renderRoutes(geojsonData) {
     if (allBounds) {
         map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 16 });
     }
+
+    // ── Poblar search index, chips de filtro y favoritos ──
+    buildSearchIndex(geojsonData);
+    populateRouteFilter(geojsonData);
+    renderFavoritesList();
 }
 
 // ──────────────────────────────────────────────
@@ -635,4 +640,336 @@ document.addEventListener('DOMContentLoaded', () => {
             if (panel) panel.classList.toggle('collapsed');
         });
     }
+
+    // ── Inicializar Search, Filters, Dark Mode ──
+    initSearch();
+    initRouteFilter();
+    initDarkMode();
+    initFavorites();
 });
+
+// ======================================================================
+// 12. SEARCH DE PARADAS (búsqueda en tiempo real con autocomplete)
+// ======================================================================
+let searchIndex = [];  // [{ name, lat, lon, routeId, routeName, routeColor }]
+
+function buildSearchIndex(geojsonData) {
+    searchIndex = [];
+    geojsonData.features.forEach((feature, routeIndex) => {
+        const routeId = feature.properties.id;
+        const routeName = feature.properties.name;
+        const color = CONFIG.routeColors[routeIndex % CONFIG.routeColors.length];
+        const stops = feature.properties.stops || [];
+        stops.forEach(stop => {
+            searchIndex.push({
+                name: stop.name || `Parada ${stops.indexOf(stop) + 1}`,
+                lat: stop.lat,
+                lon: stop.lon,
+                routeId,
+                routeName,
+                routeColor: color
+            });
+        });
+        // También indexar nombre de ruta
+        searchIndex.push({
+            name: routeName,
+            lat: null,
+            lon: null,
+            routeId,
+            routeName,
+            routeColor: color,
+            isRoute: true
+        });
+    });
+}
+
+function initSearch() {
+    const input = document.getElementById('search-input');
+    const clearBtn = document.getElementById('search-clear');
+    const resultsEl = document.getElementById('search-results');
+
+    if (!input || !clearBtn || !resultsEl) return;
+
+    input.addEventListener('input', () => {
+        const query = input.value.trim().toLowerCase();
+        if (query.length < 2) {
+            resultsEl.classList.remove('show');
+            clearBtn.style.display = 'none';
+            return;
+        }
+        clearBtn.style.display = 'block';
+
+        const matches = searchIndex
+            .filter(item => item.name.toLowerCase().includes(query))
+            .slice(0, 8);  // máx 8 resultados
+
+        if (matches.length === 0) {
+            resultsEl.innerHTML = '<div class="search-result-item" style="cursor:default"><span style="color:var(--text-muted);font-size:13px">Sin resultados</span></div>';
+        } else {
+            resultsEl.innerHTML = matches.map(item => {
+                const icon = item.isRoute ? '🛣️' : '🚏';
+                const sub = item.isRoute
+                    ? `Ruta con ${item.lat == null ? 'varias' : ''} paradas`
+                    : `${item.routeName} • ${item.lat?.toFixed(6)}, ${item.lon?.toFixed(6)}`;
+                return `
+                    <div class="search-result-item" data-lat="${item.lat}" data-lon="${item.lon}" data-routeid="${item.routeId}" data-isroute="${item.isRoute || false}">
+                        <span class="result-icon">${icon}</span>
+                        <div class="result-info">
+                            <span class="result-name">${escapeHtml(item.name)}</span>
+                            <span class="result-sub">
+                                <span class="chip-dot" style="background:${item.routeColor}"></span>
+                                ${escapeHtml(sub)}
+                            </span>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+        resultsEl.classList.add('show');
+    });
+
+    // Click en resultado
+    resultsEl.addEventListener('click', (e) => {
+        const item = e.target.closest('.search-result-item');
+        if (!item) return;
+        const lat = parseFloat(item.dataset.lat);
+        const lon = parseFloat(item.dataset.lon);
+        const routeId = parseInt(item.dataset.routeid);
+        const isRoute = item.dataset.isroute === 'true';
+
+        if (isRoute || isNaN(lat)) {
+            // Es una ruta → centrar en ella
+            highlightRoute(routeId);
+            centerOnRoute(routeId);
+        } else {
+            // Es una parada → volar a ella y destacar ruta
+            map.setView([lat, lon], 17, { animate: true, duration: 0.8 });
+            highlightRoute(routeId);
+            // Guardar en favoritos recientes
+            addRecentStop({ name: item.querySelector('.result-name').textContent, lat, lon, routeId });
+        }
+
+        input.value = '';
+        resultsEl.classList.remove('show');
+        clearBtn.style.display = 'none';
+    });
+
+    clearBtn.addEventListener('click', () => {
+        input.value = '';
+        resultsEl.classList.remove('show');
+        clearBtn.style.display = 'none';
+        input.focus();
+    });
+
+    // Cerrar dropdown al click fuera
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#search-bar')) {
+            resultsEl.classList.remove('show');
+        }
+    });
+}
+
+// ======================================================================
+// 13. FILTRO DE RUTAS (chips de colores)
+// ======================================================================
+let activeFilterRouteId = null;
+
+function initRouteFilter() {
+    // Se pobla en renderRoutes()
+}
+
+function populateRouteFilter(geojsonData) {
+    const chipsEl = document.getElementById('route-filter-chips');
+    if (!chipsEl) return;
+
+    chipsEl.innerHTML = '<span class="filter-chip active" data-routeid="all">🌐 Todo</span>';
+
+    geojsonData.features.forEach((feature, index) => {
+        const routeId = feature.properties.id;
+        const routeName = feature.properties.name;
+        const color = CONFIG.routeColors[index % CONFIG.routeColors.length];
+        const shortName = routeName.length > 14 ? routeName.substring(0, 13) + '…' : routeName;
+        const chip = document.createElement('span');
+        chip.className = 'filter-chip';
+        chip.dataset.routeid = routeId;
+        chip.innerHTML = `<span class="chip-dot" style="background:${color}"></span>${escapeHtml(shortName)}`;
+        chip.addEventListener('click', () => toggleRouteFilter(routeId, chip));
+        chipsEl.appendChild(chip);
+    });
+
+    // Chip "Todo"
+    chipsEl.querySelector('[data-routeid="all"]').addEventListener('click', () => {
+        activeFilterRouteId = null;
+        chipsEl.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        chipsEl.querySelector('[data-routeid="all"]').classList.add('active');
+        // Mostrar todas las rutas
+        Object.values(routeLayers).forEach(lg => lg.setStyle({ opacity: CONFIG.routeOpacity }));
+        Object.keys(routeLayers).forEach(id => {
+            routeLayers[id].eachLayer(l => {
+                if (l instanceof L.Polyline && l.options.color) {
+                    l.setStyle({ weight: CONFIG.routeWeight });
+                }
+            });
+        });
+        map.fitBounds(getAllRoutesBounds(), { padding: [50, 50], maxZoom: 16 });
+    });
+}
+
+function toggleRouteFilter(routeId, chipElement) {
+    const chipsEl = document.getElementById('route-filter-chips');
+    if (!chipsEl) return;
+
+    if (activeFilterRouteId === routeId) {
+        // Deseleccionar
+        activeFilterRouteId = null;
+        chipElement.classList.remove('active');
+        chipsEl.querySelector('[data-routeid="all"]').classList.add('active');
+        Object.values(routeLayers).forEach(lg => lg.setStyle({ opacity: CONFIG.routeOpacity }));
+        Object.keys(routeLayers).forEach(id => {
+            routeLayers[id].eachLayer(l => {
+                if (l instanceof L.Polyline && l.options.color) {
+                    l.setStyle({ weight: CONFIG.routeWeight });
+                }
+            });
+        });
+        map.fitBounds(getAllRoutesBounds(), { padding: [50, 50], maxZoom: 16 });
+    } else {
+        // Seleccionar esta ruta
+        activeFilterRouteId = routeId;
+        chipsEl.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        chipElement.classList.add('active');
+        // Atenuar todas menos la seleccionada
+        Object.entries(routeLayers).forEach(([id, lg]) => {
+            if (parseInt(id) === routeId) {
+                lg.setStyle({ opacity: 1 });
+                lg.eachLayer(l => {
+                    if (l instanceof L.Polyline && l.options.color) {
+                        l.setStyle({ weight: CONFIG.routeWeight + 3 });
+                    }
+                });
+            } else {
+                lg.setStyle({ opacity: 0.08 });
+                lg.eachLayer(l => {
+                    if (l instanceof L.Polyline && l.options.color) {
+                        l.setStyle({ weight: 1 });
+                    }
+                });
+            }
+        });
+        centerOnRoute(routeId);
+    }
+}
+
+function getAllRoutesBounds() {
+    const bounds = L.latLngBounds();
+    Object.values(routeLayers).forEach(lg => {
+        lg.eachLayer(l => {
+            if (l instanceof L.Polyline) {
+                l.getLatLngs().forEach(ll => bounds.extend(ll));
+            }
+        });
+    });
+    return bounds;
+}
+
+// ======================================================================
+// 14. DARK MODE
+// ======================================================================
+function initDarkMode() {
+    const toggle = document.getElementById('dark-mode-toggle');
+    if (!toggle) return;
+
+    const saved = localStorage.getItem('optibus-dark-mode');
+    if (saved === 'true' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.body.classList.add('dark');
+        toggle.textContent = '☀️';
+    }
+
+    toggle.addEventListener('click', () => {
+        const isDark = document.body.classList.toggle('dark');
+        toggle.textContent = isDark ? '☀️' : '🌙';
+        localStorage.setItem('optibus-dark-mode', isDark.toString());
+    });
+}
+
+// ======================================================================
+// 15. FAVORITOS (localStorage)
+// ======================================================================
+const RECENT_STOPS_KEY = 'optibus-recent-stops';
+const FAV_STOPS_KEY = 'optibus-fav-stops';
+const MAX_RECENT = 5;
+
+function initFavorites() {
+    // Placeholder — se llena dinámicamente en populateRouteFilter
+    renderFavoritesList();
+}
+
+function addRecentStop(stop) {
+    let recent = [];
+    try { recent = JSON.parse(localStorage.getItem(RECENT_STOPS_KEY) || '[]'); } catch(e) {}
+    recent = recent.filter(s => !(s.lat === stop.lat && s.lon === stop.lon));
+    recent.unshift(stop);
+    if (recent.length > MAX_RECENT) recent = recent.slice(0, MAX_RECENT);
+    localStorage.setItem(RECENT_STOPS_KEY, JSON.stringify(recent));
+    renderFavoritesList();
+}
+
+function toggleFavoriteStop(stop) {
+    let favs = [];
+    try { favs = JSON.parse(localStorage.getItem(FAV_STOPS_KEY) || '[]'); } catch(e) {}
+    const idx = favs.findIndex(s => s.lat === stop.lat && s.lon === stop.lon);
+    if (idx >= 0) {
+        favs.splice(idx, 1);
+    } else {
+        favs.unshift(stop);
+    }
+    localStorage.setItem(FAV_STOPS_KEY, JSON.stringify(favs));
+    renderFavoritesList();
+}
+
+function getFavorites() {
+    try { return JSON.parse(localStorage.getItem(FAV_STOPS_KEY) || '[]'); } catch(e) { return []; }
+}
+
+function renderFavoritesList() {
+    const favSection = document.getElementById('favorites-section');
+    const favList = document.getElementById('favorites-list');
+    if (!favSection || !favList) return;
+
+    const favs = getFavorites();
+    const recents = [];
+    try { recents = JSON.parse(localStorage.getItem(RECENT_STOPS_KEY) || '[]'); } catch(e) {}
+
+    const allItems = [...favs.map(f => ({...f, isFav: true})), ...recents.filter(r => !favs.some(f => f.lat === r.lat && f.lon === r.lon)).map(r => ({...r, isFav: false}))];
+
+    if (allItems.length === 0) {
+        favSection.classList.remove('has-favorites');
+        return;
+    }
+
+    favSection.classList.add('has-favorites');
+    favList.innerHTML = allItems.slice(0, 6).map(item => {
+        const favIcon = item.isFav ? '⭐' : '🕐';
+        return `
+            <div class="stop-list-item" data-lat="${item.lat}" data-lon="${item.lon}" data-routeid="${item.routeId}">
+                <span class="stop-list-number" style="background:var(--primary)">${favIcon}</span>
+                <span class="stop-list-name">${escapeHtml(item.name)}</span>
+                <button class="btn-icon" title="${item.isFav ? 'Quitar de favoritos' : 'Agregar a favoritos'}" 
+                    style="font-size:12px;width:24px;height:24px"
+                    onclick="event.stopPropagation();toggleFavoriteStop({name:'${escapeHtml(item.name).replace(/'/g, "\\'")}',lat:${item.lat},lon:${item.lon},routeId:${item.routeId}});return false;">
+                    ${item.isFav ? '★' : '☆'}
+                </button>
+            </div>`;
+    }).join('');
+
+    // Click handlers
+    favList.querySelectorAll('.stop-list-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const lat = parseFloat(el.dataset.lat);
+            const lon = parseFloat(el.dataset.lon);
+            const routeId = parseInt(el.dataset.routeid);
+            map.setView([lat, lon], 17, { animate: true, duration: 0.8 });
+            if (routeId) highlightRoute(routeId);
+        });
+    });
+}
+

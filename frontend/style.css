@@ -78,6 +78,166 @@ body, html {
     max-height: 350px;
 }
 
+/* ── Search Bar ── */
+#search-bar {
+    padding: 8px 8px 0 8px;
+    flex-shrink: 0;
+    position: relative;
+}
+.search-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: var(--bg-panel-hover);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 0 12px;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+.search-input-wrapper:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+.search-icon {
+    font-size: 14px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+#search-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 10px 0;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--text);
+    outline: none;
+}
+#search-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+.search-clear-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-muted);
+    padding: 4px;
+    border-radius: 50%;
+    transition: background var(--transition);
+}
+.search-clear-btn:hover { background: var(--border); }
+
+/* ── Search Results Dropdown ── */
+.search-results-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 8px; right: 8px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 0 0 10px 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 2000;
+    display: none;
+}
+.search-results-dropdown.show {
+    display: block;
+}
+.search-result-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background var(--transition);
+    border-bottom: 1px solid var(--border);
+}
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:hover { background: var(--bg-panel-hover); }
+.search-result-item .result-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+.search-result-item .result-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.search-result-item .result-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.search-result-item .result-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* ── Chips de filtro de rutas ── */
+#route-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 8px 4px 8px;
+    flex-shrink: 0;
+}
+.filter-chip {
+    padding: 4px 12px;
+    border-radius: 16px;
+    border: 1.5px solid var(--border);
+    background: var(--bg-panel);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    user-select: none;
+}
+.filter-chip:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.filter-chip.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    font-weight: 600;
+}
+.filter-chip .chip-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+}
+
+/* ── Favorites Section ── */
+#favorites-section {
+    flex-shrink: 0;
+    border-top: 2px solid var(--border);
+    padding: 8px;
+    display: none;
+}
+#favorites-section.has-favorites {
+    display: block;
+}
+.section-header {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 4px 6px;
+}
+
 #panel-header::before {
     content: '🚌';
     margin-right: 8px;
