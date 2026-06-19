@@ -52,3 +52,10 @@ backend/data/recorded_routes/
 backend/data/*.gpx
 backend/data/*.json
 backend/data/*.geojson
+backend/seed_data/*.gpx
+backend/seed_data/*.json
+backend/data/*
+!backend/data/.gitkeep
+
+# ==== Deploy artifacts (no versionar) ====
+.deploy_backups/

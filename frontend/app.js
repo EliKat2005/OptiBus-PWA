@@ -191,7 +191,7 @@ function showRouteDetail(routeId) {
     hideAllStopMarkers();
     showStopMarkersForRoute(routeId, stops, color);
 
-    // ── Panel inferior: título + lista de paradas ──
+    // ── Panel inferior: título + lista de paradas con botón ⭐ ──
     stopListEl.innerHTML = '';
     const titleDiv = document.createElement('div');
     titleDiv.className = 'stop-list-title';
@@ -200,11 +200,17 @@ function showRouteDetail(routeId) {
 
     if (stops.length > 0) {
         stops.forEach((stop, idx) => {
+            const isFav = isStopFavorite({ name: stop.name, routeId });
             const stopItem = document.createElement('div');
             stopItem.className = 'stop-list-item';
             stopItem.innerHTML = `
                 <span class="stop-list-number" style="background:${color}">${idx + 1}</span>
-                <span class="stop-list-name">${escapeHtml(stop.name || `Parada ${idx + 1}`)}</span>
+                <span class="stop-list-name" style="flex:1">${escapeHtml(stop.name || `Parada ${idx + 1}`)}</span>
+                <button class="btn-icon fav-btn" title="${isFav ? 'Quitar de favoritos' : 'Agregar a favoritos'}" 
+                    style="font-size:14px;width:28px;height:28px;flex-shrink:0"
+                    onclick="event.stopPropagation();toggleFavoriteStop({name:'${escapeHtml(stop.name).replace(/'/g, "\\'")}',lat:${stop.lat},lon:${stop.lon},routeId:${routeId}});this.closest('.stop-list-item').querySelector('.fav-btn').textContent=isStopFavorite({name:'${escapeHtml(stop.name).replace(/'/g, "\\'")}',routeId:${routeId}})?'★':'☆';return false;">
+                    ${isFav ? '★' : '☆'}
+                </button>
             `;
             stopItem.addEventListener('click', () => {
                 map.setView([stop.lat, stop.lon], 17, { animate: true, duration: 0.6 });
@@ -555,10 +561,24 @@ function addRecentStop(stop) {
 function toggleFavoriteStop(stop) {
     let favs = [];
     try { favs = JSON.parse(localStorage.getItem(FAV_STOPS_KEY) || '[]'); } catch(e) {}
-    const idx = favs.findIndex(s => s.lat === stop.lat && s.lon === stop.lon);
-    if (idx >= 0) favs.splice(idx, 1); else favs.unshift(stop);
+    // Usar name+routeId como identificador único (más robusto que lat/lon exacto)
+    const key = `${stop.name}::${stop.routeId}`;
+    const idx = favs.findIndex(s => `${s.name}::${s.routeId}` === key);
+    if (idx >= 0) {
+        favs.splice(idx, 1);
+    } else {
+        favs.unshift(stop);
+    }
     localStorage.setItem(FAV_STOPS_KEY, JSON.stringify(favs));
     renderFavoritesList();
+}
+
+function isStopFavorite(stop) {
+    try {
+        const favs = JSON.parse(localStorage.getItem(FAV_STOPS_KEY) || '[]');
+        const key = `${stop.name}::${stop.routeId}`;
+        return favs.some(s => `${s.name}::${s.routeId}` === key);
+    } catch(e) { return false; }
 }
 
 function getFavorites() {
