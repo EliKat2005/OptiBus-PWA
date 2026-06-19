@@ -390,7 +390,7 @@ class RouteRecorderService : Service(), LocationListener {
 
                 val requestBuilder = Request.Builder()
                     .url(url)
-                    .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                    .post(RequestBody.create("application/json".toMediaType(), jsonBody))
 
                 if (apiKey.isNotBlank()) {
                     requestBuilder.addHeader("Authorization", "Bearer $apiKey")
@@ -754,10 +754,12 @@ class RouteRecorderService : Service(), LocationListener {
         val R = 6371000.0 // radio Tierra en metros
         val dLat = Math.toRadians(lat2 - lat1)
         val dLon = Math.toRadians(lon2 - lon1)
-        val a = Math.sin(dLat / 2).pow(2) +
+        val sinDLat = Math.sin(dLat / 2.0)
+        val sinDLon = Math.sin(dLon / 2.0)
+        val a = sinDLat * sinDLat +
                 Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                Math.sin(dLon / 2).pow(2)
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+                sinDLon * sinDLon
+        return R * 2.0 * Math.atan2(Math.sqrt(a), Math.sqrt(1.0 - a))
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
