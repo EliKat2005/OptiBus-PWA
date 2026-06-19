@@ -28,7 +28,10 @@
     <div id="side-panel">
         <div id="panel-header">
             <span>OptiBus</span>
-            <button id="dark-mode-toggle" title="Modo oscuro" aria-label="Alternar modo oscuro">🌙</button>
+            <div style="display:flex;gap:6px">
+                <button id="lang-toggle" title="Idioma" aria-label="Cambiar idioma" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:6px;color:#fff;font-size:12px;cursor:pointer;padding:4px 8px">ES</button>
+                <button id="dark-mode-toggle" title="Modo oscuro" aria-label="Alternar modo oscuro" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:6px;color:#fff;font-size:16px;cursor:pointer;padding:4px 8px">🌙</button>
+            </div>
         </div>
         <!-- Barra de búsqueda de paradas -->
         <div id="search-bar">
@@ -38,6 +41,15 @@
                 <button id="search-clear" class="search-clear-btn" style="display:none" aria-label="Limpiar búsqueda">✕</button>
             </div>
             <div id="search-results" class="search-results-dropdown"></div>
+        </div>
+        <!-- Planificador de viaje -->
+        <div id="route-planner" style="flex-shrink:0;padding:4px 8px;border-bottom:1px solid var(--border);display:none">
+            <div style="display:flex;gap:4px;margin-bottom:4px">
+                <input type="text" id="plan-from" placeholder="Origen…" autocomplete="off" style="flex:1;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-panel);color:var(--text)">
+                <input type="text" id="plan-to" placeholder="Destino…" autocomplete="off" style="flex:1;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-panel);color:var(--text)">
+            </div>
+            <button id="plan-submit" style="width:100%;padding:6px;background:var(--primary);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">🚌 Planificar ruta</button>
+            <div id="plan-result" style="margin-top:4px;font-size:11px;color:var(--text-muted);text-align:center"></div>
         </div>
         <!-- Chips de filtro de rutas (única vista de rutas) -->
         <div id="route-filter-chips"></div>

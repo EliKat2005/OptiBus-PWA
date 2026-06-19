@@ -634,6 +634,72 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('side-panel')?.classList.toggle('collapsed');
     });
 
+    // ── Selector de idioma ──
+    const langToggle = document.getElementById('lang-toggle');
+    if (langToggle) {
+        langToggle.textContent = i18n.getLang().toUpperCase();
+        langToggle.addEventListener('click', () => {
+            const next = i18n.getLang() === 'es' ? 'en' : 'es';
+            i18n.setLang(next);
+            langToggle.textContent = next.toUpperCase();
+        });
+    }
+
+    // ── Planificador de viaje ──
+    const planSubmit = document.getElementById('plan-submit');
+    if (planSubmit) {
+        planSubmit.addEventListener('click', planRoute);
+    }
+
     initSearch();
     initDarkMode();
 });
+
+// ── Planificador de viaje (cómo llegar de A a B) ──
+async function planRoute() {
+    const fromInput = document.getElementById('plan-from');
+    const toInput = document.getElementById('plan-to');
+    const resultEl = document.getElementById('plan-result');
+    const plannerEl = document.getElementById('route-planner');
+
+    if (!fromInput || !toInput || !resultEl) return;
+
+    const fromName = fromInput.value.trim();
+    const toName = toInput.value.trim();
+
+    if (!fromName || !toName) {
+        resultEl.textContent = 'Escribe origen y destino';
+        return;
+    }
+
+    resultEl.textContent = '🔍 Buscando mejor ruta…';
+    resultEl.style.color = 'var(--text-muted)';
+
+    try {
+        const response = await fetch(`${API_URL}/api/routes/plan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from_name: fromName, to_name: toName })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            resultEl.textContent = err.detail || 'No se encontró ruta';
+            resultEl.style.color = '#ef4444';
+            return;
+        }
+
+        const data = await response.json();
+        resultEl.textContent = data.message;
+        resultEl.style.color = '#10b981';
+
+        // Destacar la primera ruta del plan en el mapa
+        if (data.plan && data.plan.length > 0) {
+            const firstRoute = data.plan[0];
+            showRouteDetail(firstRoute.route_id);
+        }
+    } catch (e) {
+        resultEl.textContent = 'Error de conexión';
+        resultEl.style.color = '#ef4444';
+    }
+}
