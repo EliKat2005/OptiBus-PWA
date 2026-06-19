@@ -570,7 +570,7 @@ function renderFavoritesList() {
     const favList = document.getElementById('favorites-list');
     if (!favSection || !favList) return;
     const favs = getFavorites();
-    const recents = [];
+    let recents = [];
     try { recents = JSON.parse(localStorage.getItem(RECENT_STOPS_KEY) || '[]'); } catch(e) {}
     const allItems = [...favs.map(f => ({...f, isFav: true})), ...recents.filter(r => !favs.some(f => f.lat === r.lat && f.lon === r.lon)).map(r => ({...r, isFav: false}))];
     if (allItems.length === 0) { favSection.classList.remove('has-favorites'); return; }

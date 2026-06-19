@@ -98,7 +98,7 @@ security = HTTPBearer(auto_error=False)
 async def verify_api_key(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
     """Verifica API Key estática O JWT. El que pase primero."""
     if not API_KEY_ENABLED:
-        return True
+        return {"auth_type": "none", "role": "public", "note": "API Key deshabilitada"}
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1133,8 +1133,8 @@ async def upload_recorded_route(
 # --- Parada individual (desde APK en tiempo real) ---
 @app.post("/api/stops/record")
 async def record_stop(
+    request: Request,
     _auth: None = Depends(verify_api_key),
-    request: Request = None,
     db: AsyncSession = Depends(get_db)
 ):
     """Recibe una parada individual grabada desde el APK (tiempo real)."""

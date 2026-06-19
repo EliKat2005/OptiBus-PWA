@@ -133,7 +133,13 @@ wait_for_health() {
     info "Esperando health de la API (máx 90s)..."
     for i in $(seq 1 90); do
         if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
-            log "✅ API healthy en ${i}s: $(curl -s http://localhost:8000/health | python3 -c 'import sys,json; d=json.load(sys.stdin); print(f\"DB={d.get(\"database\",\"?\")} Redis={d.get(\"redis\",\"?\")} v={d.get(\"version\",\"?\")}\")' 2>/dev/null || echo 'ok')"
+            local HEALTH_JSON
+            HEALTH_JSON=$(curl -s http://localhost:8000/health 2>/dev/null)
+            if command -v python3 &>/dev/null; then
+                log "✅ API healthy en ${i}s: $(echo "$HEALTH_JSON" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(f"DB={d.get(\"database\",\"?\")} Redis={d.get(\"redis\",\"?\")} v={d.get(\"version\",\"?\")}\")' 2>/dev/null || echo 'ok')"
+            else
+                log "✅ API healthy en ${i}s: $(echo "$HEALTH_JSON" | grep -o '"status":"[^"]*"' | sed 's/"status":"//;s/"//' || echo 'ok')"
+            fi
             return 0
         fi
         [ $((i % 15)) -eq 0 ] && info "   ... ${i}s esperando"
