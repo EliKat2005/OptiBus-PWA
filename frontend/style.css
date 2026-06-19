@@ -219,6 +219,46 @@ body, html {
     margin-right: 4px;
 }
 
+/* ── Route Detail Header ── */
+#route-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-panel-hover);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    animation: slideDown 0.2s ease;
+}
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+#route-detail-back {
+    width: 28px; height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-panel);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    transition: background var(--transition);
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+#route-detail-back:hover { background: var(--border); color: var(--text); }
+#route-detail-name {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--text);
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* ── Favorites Section ── */
 #favorites-section {
     flex-shrink: 0;

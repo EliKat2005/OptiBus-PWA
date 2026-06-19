@@ -101,9 +101,14 @@ async function loadRoutes() {
     }
 }
 
+// Almacena los datos crudos de rutas para renderizado on-demand de paradas
+let routesGeoJSON = null;
+
 function renderRoutes(geojsonData) {
+    routesGeoJSON = geojsonData;  // guardar para uso en showRouteDetail
     routeListEl.innerHTML = '';
     stopListEl.innerHTML = '';
+    stopMarkers.length = 0;  // limpiar referencias
 
     if (!geojsonData.features || geojsonData.features.length === 0) {
         routeListEl.innerHTML = '<div class="empty-state">🚏 Sin rutas configuradas</div>';
@@ -120,140 +125,64 @@ function renderRoutes(geojsonData) {
 
         if (!coords || coords.length < 2) return;
 
-        // Grupo de capa para esta ruta
+        // Grupo de capa para esta ruta (sin paradas aún)
         const layerGroup = L.layerGroup().addTo(map);
         routeLayers[routeId] = layerGroup;
 
         // ── Línea exterior (glow / sombra) ──
-        const glowLine = L.polyline(
-            coords.map(c => [c[1], c[0]]),
-            {
-                color: color,
-                weight: CONFIG.routeWeight + 4,
-                opacity: 0.15,
-                smoothFactor: 2,
-                interactive: false
-            }
-        ).addTo(layerGroup);
+        L.polyline(coords.map(c => [c[1], c[0]]), {
+            color: color, weight: CONFIG.routeWeight + 4, opacity: 0.15,
+            smoothFactor: 2, interactive: false
+        }).addTo(layerGroup);
 
         // ── Línea principal ──
-        const mainLine = L.polyline(
-            coords.map(c => [c[1], c[0]]),
-            {
-                color: color,
-                weight: CONFIG.routeWeight,
-                opacity: CONFIG.routeOpacity,
-                smoothFactor: 2,
-                dashArray: null,
-                lineCap: 'round',
-                lineJoin: 'round'
-            }
-        ).addTo(layerGroup);
+        const mainLine = L.polyline(coords.map(c => [c[1], c[0]]), {
+            color: color, weight: CONFIG.routeWeight, opacity: CONFIG.routeOpacity,
+            smoothFactor: 2, lineCap: 'round', lineJoin: 'round'
+        }).addTo(layerGroup);
 
         // ── Flechas direccionales ──
         for (let i = CONFIG.arrowInterval; i < coords.length - 1; i += CONFIG.arrowInterval) {
-            const p1 = coords[i];
-            const p2 = coords[i + 1];
-            const midLat = (p1[0] + p2[0]) / 2;
-            const midLon = (p1[1] + p2[1]) / 2;
+            const p1 = coords[i], p2 = coords[i + 1];
+            const midLat = (p1[0] + p2[0]) / 2, midLon = (p1[1] + p2[1]) / 2;
             const angle = Math.atan2(p2[0] - p1[0], p2[1] - p1[1]) * 180 / Math.PI + 90;
-            
             L.marker([midLat, midLon], {
                 icon: L.divIcon({
                     className: 'route-arrow-icon',
                     html: `<div class="route-arrow" style="--color: ${color}; transform: rotate(${angle}deg)">▶</div>`,
-                    iconSize: [16, 16],
-                    iconAnchor: [8, 8]
-                }),
-                interactive: false
+                    iconSize: [16, 16], iconAnchor: [8, 8]
+                }), interactive: false
             }).addTo(layerGroup);
         }
 
-        // ── Tooltip al hover ──
-        mainLine.bindTooltip(`<strong>${escapeHtml(routeName)}</strong><br><small>${coords.length} puntos</small>`, {
-            sticky: true,
-            direction: 'top',
-            className: 'route-tooltip'
+        mainLine.bindTooltip(`<strong>${escapeHtml(routeName)}</strong>`, {
+            sticky: true, direction: 'top', className: 'route-tooltip'
         });
 
-        // ── Bounds ──
         const routeBounds = mainLine.getBounds();
-        if (!allBounds) allBounds = routeBounds;
-        else allBounds.extend(routeBounds);
+        if (!allBounds) allBounds = routeBounds; else allBounds.extend(routeBounds);
 
         // ── Panel lateral: entrada de ruta ──
+        const stops = feature.properties.stops || [];
         const routeItem = document.createElement('div');
         routeItem.className = 'route-list-item';
         routeItem.innerHTML = `
             <div class="route-color-dot" style="background:${color}"></div>
             <div class="route-info">
                 <strong>${escapeHtml(routeName)}</strong>
-                <small>${coords.length} pts · Paradas: <span id="stopCount_${routeId}">-</span></small>
+                <small>${stops.length} paradas</small>
             </div>
             <div class="route-actions">
-                <button class="btn-icon" title="Centrar en ruta" onclick="centerOnRoute(${routeId})">◎</button>
-                <button class="btn-icon" title="Zoom a ruta" onclick="zoomToRoute(${routeId})">🔍</button>
+                <button class="btn-icon" title="Centrar en ruta" onclick="event.stopPropagation();centerOnRoute(${routeId})">◎</button>
+                <button class="btn-icon" title="Zoom a ruta" onclick="event.stopPropagation();zoomToRoute(${routeId})">🔍</button>
             </div>
         `;
-        routeItem.addEventListener('click', () => highlightRoute(routeId));
+        routeItem.addEventListener('click', () => showRouteDetail(routeId));
         routeListEl.appendChild(routeItem);
-
-        // ── Renderizar paradas incluidas en la respuesta ──
-        const stops = feature.properties.stops || [];
-        const countEl = document.getElementById(`stopCount_${routeId}`);
-        if (countEl) countEl.textContent = stops.length;
-
-        stops.forEach((stop, index) => {
-            const stopLat = stop.lat;
-            const stopLon = stop.lon;
-            const stopName = stop.name || `Parada ${index + 1}`;
-            
-            const marker = L.marker([stopLat, stopLon], {
-                icon: createStopIcon(index + 1, color)
-            });
-
-            marker.bindPopup(`
-                <div class="stop-popup">
-                    <h3>🚏 ${escapeHtml(stopName)}</h3>
-                    <div class="popup-info">
-                        <span>📍 ${stopLat.toFixed(6)}, ${stopLon.toFixed(6)}</span>
-                    </div>
-                </div>
-            `, { maxWidth: 260, className: 'custom-popup' });
-
-            marker.bindTooltip(`<strong>${escapeHtml(stopName)}</strong>`, {
-                direction: 'top',
-                offset: [0, -18],
-                className: 'stop-tooltip'
-            });
-
-            if (routeLayers[routeId]) {
-                marker.addTo(routeLayers[routeId]);
-            }
-            stopMarkers.push({ marker, routeId, name: stopName, coords: [stopLat, stopLon] });
-        });
-
-        // Panel lateral: lista de paradas
-        if (stops.length > 0) {
-            const stopHeader = document.createElement('div');
-            stopHeader.className = 'stop-list-header';
-            stopHeader.innerHTML = `<span style="color:${color}">●</span> ${escapeHtml(routeName)}`;
-            stopListEl.appendChild(stopHeader);
-            
-            stops.forEach((stop, idx) => {
-                const stopItem = document.createElement('div');
-                stopItem.className = 'stop-list-item';
-                stopItem.innerHTML = `
-                    <span class="stop-list-number" style="background:${color}">${idx + 1}</span>
-                    <span class="stop-list-name">${escapeHtml(stop.name || `Parada ${idx + 1}`)}</span>
-                `;
-                stopItem.addEventListener('click', () => {
-                    map.setView([stop.lat, stop.lon], 17, { animate: true });
-                });
-                stopListEl.appendChild(stopItem);
-            });
-        }
     });
+
+    // Mensaje vacío en stopList
+    stopListEl.innerHTML = '<div class="empty-state" id="stopList-empty">Selecciona una ruta para ver sus paradas</div>';
 
     // Centrar en todas las rutas
     if (allBounds) {
@@ -269,25 +198,43 @@ function renderRoutes(geojsonData) {
 // ──────────────────────────────────────────────
 // 6. INTERACCIÓN: HIGHLIGHT DE RUTA
 // ──────────────────────────────────────────────
-function highlightRoute(routeId) {
-    if (activeRouteIndex === routeId) {
-        // Deseleccionar
-        activeRouteIndex = -1;
-        Object.values(routeLayers).forEach(lg => lg.setStyle({ opacity: CONFIG.routeOpacity }));
-        Object.keys(routeLayers).forEach(id => {
-            routeLayers[id].eachLayer(l => {
-                if (l instanceof L.Polyline && l.options.color) {
-                    l.setStyle({ weight: CONFIG.routeWeight });
-                }
-            });
-        });
-        document.querySelectorAll('.route-list-item').forEach(el => el.classList.remove('active'));
-        return;
+// ── NUEVO: Vista General / Vista Detalle (estilo Citymapper) ──
+let currentDetailRouteId = null;
+
+function showRouteDetail(routeId) {
+    if (!routesGeoJSON) return;
+    currentDetailRouteId = routeId;
+
+    const feature = routesGeoJSON.features.find(f => f.properties.id === routeId);
+    if (!feature) return;
+
+    const routeName = feature.properties.name;
+    const stops = feature.properties.stops || [];
+    const routeIndex = routesGeoJSON.features.indexOf(feature);
+    const color = CONFIG.routeColors[routeIndex % CONFIG.routeColors.length];
+
+    // ── Header de detalle ──
+    const detailHeader = document.getElementById('route-detail-header');
+    const detailName = document.getElementById('route-detail-name');
+    const detailBadge = document.getElementById('route-detail-badge');
+    if (detailHeader && detailName && detailBadge) {
+        detailHeader.style.display = 'flex';
+        detailName.textContent = routeName;
+        detailBadge.innerHTML = `<span class="chip-dot" style="background:${color}"></span>${stops.length} paradas`;
     }
 
-    activeRouteIndex = routeId;
+    // ── Ocultar routeList, mostrar solo esta ruta como activa ──
+    document.querySelectorAll('.route-list-item').forEach(el => {
+        el.classList.remove('active');
+        el.style.display = 'none';
+    });
+    const activeEl = document.querySelector(`.route-list-item:nth-child(${routeIndex + 1})`);
+    if (activeEl) {
+        activeEl.classList.add('active');
+        activeEl.style.display = 'flex';
+    }
 
-    // Atenuar otras rutas
+    // ── Atenuar otras rutas en mapa ──
     Object.entries(routeLayers).forEach(([id, lg]) => {
         if (parseInt(id) === routeId) {
             lg.setStyle({ opacity: 1 });
@@ -297,19 +244,125 @@ function highlightRoute(routeId) {
                 }
             });
         } else {
-            lg.setStyle({ opacity: 0.2 });
+            lg.setStyle({ opacity: 0.08 });
             lg.eachLayer(l => {
                 if (l instanceof L.Polyline && l.options.color) {
-                    l.setStyle({ weight: 2 });
+                    l.setStyle({ weight: 1 });
                 }
             });
         }
     });
 
-    // Highlight en panel
-    document.querySelectorAll('.route-list-item').forEach((el, i) => {
-        el.classList.toggle('active', i === Object.keys(routeLayers).indexOf(routeId));
+    // ── Mostrar solo paradas de esta ruta en el mapa ──
+    hideAllStopMarkers();
+    showStopMarkersForRoute(routeId, stops, color);
+
+    // ── Llenar stopList solo con paradas de esta ruta ──
+    stopListEl.innerHTML = '';
+    if (stops.length > 0) {
+        stops.forEach((stop, idx) => {
+            const stopItem = document.createElement('div');
+            stopItem.className = 'stop-list-item';
+            stopItem.innerHTML = `
+                <span class="stop-list-number" style="background:${color}">${idx + 1}</span>
+                <span class="stop-list-name">${escapeHtml(stop.name || `Parada ${idx + 1}`)}</span>
+            `;
+            stopItem.addEventListener('click', () => {
+                map.setView([stop.lat, stop.lon], 17, { animate: true, duration: 0.6 });
+            });
+            stopListEl.appendChild(stopItem);
+        });
+    } else {
+        stopListEl.innerHTML = '<div class="empty-state">Sin paradas registradas</div>';
+    }
+
+    // Scroll del panel para mostrar las paradas
+    stopListEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Centrar en la ruta
+    centerOnRoute(routeId);
+}
+
+function showRouteOverview() {
+    currentDetailRouteId = null;
+
+    // ── Ocultar header de detalle ──
+    const detailHeader = document.getElementById('route-detail-header');
+    if (detailHeader) detailHeader.style.display = 'none';
+
+    // ── Mostrar todas las rutas en el panel ──
+    document.querySelectorAll('.route-list-item').forEach(el => {
+        el.classList.remove('active');
+        el.style.display = 'flex';
     });
+
+    // ── Restaurar opacidad de todas las rutas ──
+    Object.values(routeLayers).forEach(lg => lg.setStyle({ opacity: CONFIG.routeOpacity }));
+    Object.keys(routeLayers).forEach(id => {
+        routeLayers[id].eachLayer(l => {
+            if (l instanceof L.Polyline && l.options.color) {
+                l.setStyle({ weight: CONFIG.routeWeight });
+            }
+        });
+    });
+
+    // ── Ocultar todos los marcadores de parada ──
+    hideAllStopMarkers();
+
+    // ── Limpiar stopList ──
+    stopListEl.innerHTML = '<div class="empty-state" id="stopList-empty">Selecciona una ruta para ver sus paradas</div>';
+
+    // ── Resetear chips ──
+    const chipsEl = document.getElementById('route-filter-chips');
+    if (chipsEl) {
+        chipsEl.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        const allChip = chipsEl.querySelector('[data-routeid="all"]');
+        if (allChip) allChip.classList.add('active');
+    }
+    activeFilterRouteId = null;
+
+    // Centrar en todas las rutas
+    const bounds = getAllRoutesBounds();
+    if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+    }
+}
+
+function hideAllStopMarkers() {
+    stopMarkers.forEach(sm => {
+        if (sm.marker && sm.marker._map) {
+            map.removeLayer(sm.marker);
+        }
+    });
+    // Limpiar array manteniendo referencias para volver a agregar
+    stopMarkers.length = 0;
+}
+
+function showStopMarkersForRoute(routeId, stops, color) {
+    stops.forEach((stop, index) => {
+        const marker = L.marker([stop.lat, stop.lon], {
+            icon: createStopIcon(index + 1, color),
+            zIndexOffset: 500
+        });
+        marker.bindPopup(`
+            <div class="stop-popup">
+                <h3>🚏 ${escapeHtml(stop.name || `Parada ${index + 1}`)}</h3>
+                <div class="popup-info">
+                    <span>📍 ${stop.lat.toFixed(5)}, ${stop.lon.toFixed(5)}</span>
+                </div>
+            </div>
+        `, { maxWidth: 260, className: 'custom-popup' });
+        marker.bindTooltip(`<strong>${escapeHtml(stop.name || `Parada ${index + 1}`)}</strong>`, {
+            direction: 'top', offset: [0, -18], className: 'stop-tooltip'
+        });
+        marker.addTo(map);
+        stopMarkers.push({ marker, routeId, name: stop.name, coords: [stop.lat, stop.lon] });
+    });
+}
+
+// Keep old highlightRoute for backward compat (chips, legacy)
+function highlightRoute(routeId) {
+    showRouteDetail(routeId);
 }
 
 function centerOnRoute(routeId) {
@@ -641,6 +694,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // ── Botón volver del header de detalle de ruta ──
+    const backBtn = document.getElementById('route-detail-back');
+    if (backBtn) {
+        backBtn.addEventListener('click', showRouteOverview);
+    }
+
     // ── Inicializar Search, Filters, Dark Mode ──
     initSearch();
     initRouteFilter();
@@ -709,8 +768,8 @@ function initSearch() {
             resultsEl.innerHTML = matches.map(item => {
                 const icon = item.isRoute ? '🛣️' : '🚏';
                 const sub = item.isRoute
-                    ? `Ruta con ${item.lat == null ? 'varias' : ''} paradas`
-                    : `${item.routeName} • ${item.lat?.toFixed(6)}, ${item.lon?.toFixed(6)}`;
+                    ? 'Ruta de bus'
+                    : escapeHtml(item.routeName);
                 return `
                     <div class="search-result-item" data-lat="${item.lat}" data-lon="${item.lon}" data-routeid="${item.routeId}" data-isroute="${item.isRoute || false}">
                         <span class="result-icon">${icon}</span>
@@ -718,7 +777,7 @@ function initSearch() {
                             <span class="result-name">${escapeHtml(item.name)}</span>
                             <span class="result-sub">
                                 <span class="chip-dot" style="background:${item.routeColor}"></span>
-                                ${escapeHtml(sub)}
+                                ${sub}
                             </span>
                         </div>
                     </div>`;

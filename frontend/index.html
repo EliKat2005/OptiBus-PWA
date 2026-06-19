@@ -41,6 +41,12 @@
         </div>
         <!-- Chips de filtro de rutas -->
         <div id="route-filter-chips"></div>
+        <!-- Header de detalle de ruta (visible solo al seleccionar una ruta) -->
+        <div id="route-detail-header" style="display:none">
+            <button id="route-detail-back" title="Volver a todas las rutas">←</button>
+            <span id="route-detail-name"></span>
+            <span id="route-detail-badge" class="filter-chip active" style="font-size:10px;padding:2px 8px"></span>
+        </div>
         <!-- Lista de rutas -->
         <div id="routeList">
             <div class="empty-state">Cargando rutas…</div>
@@ -49,7 +55,9 @@
             <div class="section-header">⭐ Favoritos</div>
             <div id="favorites-list"></div>
         </div>
-        <div id="stopList"></div>
+        <div id="stopList">
+            <div class="empty-state" id="stopList-empty">Selecciona una ruta para ver sus paradas</div>
+        </div>
     </div>
 
     <!-- Botón toggle del panel (mostrar/ocultar) -->
