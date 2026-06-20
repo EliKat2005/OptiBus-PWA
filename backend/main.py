@@ -546,13 +546,15 @@ class GPSPayload(BaseModel):
 
     @field_validator('lat')
     @classmethod
-    def validate_lat(cls, v): 
-        if not -90 <= v <= 90: raise ValueError('Latitud inválida')
+    def validate_lat(cls, v):
+        if not -90 <= v <= 90:
+            raise ValueError('Latitud inválida')
         return v
     @field_validator('lon')
     @classmethod
-    def validate_lon(cls, v): 
-        if not -180 <= v <= 180: raise ValueError('Longitud inválida')
+    def validate_lon(cls, v):
+        if not -180 <= v <= 180:
+            raise ValueError('Longitud inválida')
         return v
     @field_validator('bus_id')
     @classmethod
@@ -766,7 +768,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Inicia sesión con email + password. Retorna access_token + refresh_token + perfil."""
     result = await db.execute(
         select(models.Driver).where(
-            and_(models.Driver.email == request.email, models.Driver.is_active == True)
+            and_(models.Driver.email == request.email, models.Driver.is_active.is_(True))
         )
     )
     driver = result.scalar_one_or_none()
