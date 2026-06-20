@@ -33,9 +33,9 @@ if [ ! -f .env.example ]; then
 fi
 
 # ── Generar contraseñas aleatorias ──
-POSTGRES_PW=$(openssl rand -base64 18 | tr -d '+/=')
-REDIS_PW=$(openssl rand -base64 18 | tr -d '+/=')
-GRAFANA_PW=$(openssl rand -base64 18 | tr -d '+/=')
+POSTGRES_PW=$(openssl rand -base64 18 | tr -d '+/=$!')
+REDIS_PW=$(openssl rand -base64 18 | tr -d '+/=$!')
+GRAFANA_PW=$(openssl rand -base64 18 | tr -d '+/=$!')
 
 log "Contraseñas generadas:"
 echo "   POSTGRES_PASSWORD : $POSTGRES_PW"

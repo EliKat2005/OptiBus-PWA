@@ -406,8 +406,8 @@ async def health_check():
     db_status = "unknown"
     redis_status = "unknown"
     try:
-        async with engine.begin() as conn:
-            await conn.execute(select(func.literal(1)))
+        async with engine.connect() as conn:
+            await conn.scalar(select(func.literal(1)))
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {type(e).__name__}"
@@ -685,6 +685,30 @@ async def admin_dashboard(
     if not authed:
         return JSONResponse(status_code=401, content={"detail": "Agrega ?api_key=TU_KEY a la URL o usa Authorization: Bearer <token>"})
     
+    # ── Obtener estadísticas reales de la BD ──
+    stats = {"routes": 0, "stops": 0, "positions": 0, "ws": len(manager.active_connections)}
+    db_error = None
+    try:
+        r_count = await db.execute(select(func.count(models.Route.id)))
+        stats["routes"] = r_count.scalar() or 0
+        s_count = await db.execute(select(func.count(models.Stop.id)))
+        stats["stops"] = s_count.scalar() or 0
+        p_count = await db.execute(select(func.count(models.BusPosition.id)).where(
+            models.BusPosition.recorded_at >= datetime.now(timezone.utc) - timedelta(hours=24)
+        ))
+        stats["positions"] = p_count.scalar() or 0
+    except Exception as e:
+        db_error = str(e)
+
+    redis_ok = False
+    try:
+        r = await get_redis()
+        if r:
+            await r.ping()
+            redis_ok = True
+    except Exception:
+        pass
+
     return HTMLResponse("""
 <!DOCTYPE html>
 <html lang="es">
