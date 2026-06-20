@@ -200,20 +200,39 @@ function showRouteDetail(routeId) {
 
     if (stops.length > 0) {
         stops.forEach((stop, idx) => {
-            const isFav = isStopFavorite({ name: stop.name, routeId });
             const stopItem = document.createElement('div');
             stopItem.className = 'stop-list-item';
+            stopItem.dataset.stopName = stop.name;
+            stopItem.dataset.lat = stop.lat;
+            stopItem.dataset.lon = stop.lon;
+            stopItem.dataset.routeId = routeId;
+
+            const isFav = isStopFavorite({ name: stop.name, routeId });
             stopItem.innerHTML = `
                 <span class="stop-list-number" style="background:${color}">${idx + 1}</span>
                 <span class="stop-list-name" style="flex:1">${escapeHtml(stop.name || `Parada ${idx + 1}`)}</span>
                 <button class="btn-icon fav-btn" title="${isFav ? 'Quitar de favoritos' : 'Agregar a favoritos'}" 
-                    style="font-size:14px;width:28px;height:28px;flex-shrink:0"
-                    onclick="event.stopPropagation();toggleFavoriteStop({name:'${escapeHtml(stop.name).replace(/'/g, "\\'")}',lat:${stop.lat},lon:${stop.lon},routeId:${routeId}});this.closest('.stop-list-item').querySelector('.fav-btn').textContent=isStopFavorite({name:'${escapeHtml(stop.name).replace(/'/g, "\\'")}',routeId:${routeId}})?'★':'☆';return false;">
+                    style="font-size:14px;width:28px;height:28px;flex-shrink:0">
                     ${isFav ? '★' : '☆'}
                 </button>
             `;
+
+            // Click en favorito (no usa escape HTML → usa data-*)
+            const favBtn = stopItem.querySelector('.fav-btn');
+            if (favBtn) {
+                favBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const rawName = stopItem.dataset.stopName;  // sin escape HTML
+                    const rid = parseInt(stopItem.dataset.routeId);
+                    toggleFavoriteStop({ name: rawName, lat: parseFloat(stopItem.dataset.lat), lon: parseFloat(stopItem.dataset.lon), routeId: rid });
+                    // Actualizar icono instantáneo
+                    favBtn.textContent = isStopFavorite({ name: rawName, routeId: rid }) ? '★' : '☆';
+                });
+            }
+
+            // Click en item → centrar en parada
             stopItem.addEventListener('click', () => {
-                map.setView([stop.lat, stop.lon], 17, { animate: true, duration: 0.6 });
+                map.setView([parseFloat(stopItem.dataset.lat), parseFloat(stopItem.dataset.lon)], 17, { animate: true, duration: 0.6 });
             });
             stopListEl.appendChild(stopItem);
         });
