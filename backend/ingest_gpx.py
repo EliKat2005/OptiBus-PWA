@@ -27,14 +27,13 @@ import logging
 import os
 import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 import gpxpy
 
 from database import SessionLocal
 from models import Route
-from gps_cleaner import clean_gps_track, clean_gps_track_with_stats
+from gps_cleaner import clean_gps_track_with_stats
 
 # ────────────────────────────────────────────────
 # Configuración de logging

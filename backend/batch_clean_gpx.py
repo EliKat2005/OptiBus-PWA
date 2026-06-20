@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 import gpxpy
-from gpxpy.gpx import GPX, GPXTrack, GPXTrackSegment, GPXTrackPoint
+from gpxpy.gpx import GPX
 
 from gps_cleaner import clean_gps_track, cleaning_stats, MAX_SPEED_KMH, MIN_DISTANCE_M, SMOOTH_WINDOW
 

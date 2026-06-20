@@ -591,8 +591,10 @@ async def receive_gps(payload: GPSPayload, request: Request, _auth: None = Depen
 async def receive_owntracks(payload: dict, request: Request, _auth: None = Depends(verify_api_key)):
     if payload.get("_type") == "location":
         lat, lon = payload.get("lat"), payload.get("lon")
-        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)): return {"status": "error"}
-        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180): return {"status": "error"}
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+            return {"status": "error"}
+        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+            return {"status": "error"}
         tracker_id = payload.get("tid", "BUS")
         await manager.broadcast(json.dumps({
             "type": "bus_positions",
@@ -853,11 +855,11 @@ async def register_driver(
     }
 
 @app.post("/api/auth/forgot-password")
-async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+async def forgot_password(request: ForgotPasswordRequest, _auth: None = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
     """Solicita recuperación de contraseña. El admin ve el token en el dashboard."""
     result = await db.execute(
         select(models.Driver).where(
-            and_(models.Driver.email == request.email, models.Driver.is_active == True)
+            and_(models.Driver.email == request.email, models.Driver.is_active.is_(True))
         )
     )
     driver = result.scalar_one_or_none()
@@ -886,7 +888,7 @@ async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depen
             and_(
                 models.Driver.reset_token == token_hash,
                 models.Driver.reset_token_expires_at > datetime.now(timezone.utc),
-                models.Driver.is_active == True
+                models.Driver.is_active.is_(True)
             )
         )
     )
@@ -1171,8 +1173,6 @@ async def record_stop(
     stop_name = body.get("stop_name", "Parada")
     lat = body.get("lat")
     lon = body.get("lon")
-    elevation = body.get("elevation", 0.0)
-    stop_time = body.get("time", datetime.now(timezone.utc).isoformat())
     route_name = body.get("route_name", "")
 
     # Validaciones
