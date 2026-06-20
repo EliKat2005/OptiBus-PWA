@@ -64,14 +64,12 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install uv
-        run: pip install uv
-
       - name: Install dependencies
         working-directory: backend
         run: |
-          uv pip install --system -r requirements.txt
-          uv pip install --system pytest pytest-asyncio httpx bandit ruff
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx bandit ruff
 
       - name: 🔍 Lint with Ruff
         working-directory: backend
