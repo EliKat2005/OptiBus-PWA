@@ -6,7 +6,7 @@ from pydantic import BaseModel, field_validator
 from contextlib import asynccontextmanager
 from database import engine, Base, get_db
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, cast, and_, desc
+from sqlalchemy import select, func, cast, and_, desc, text
 from sqlalchemy.orm import selectinload
 from geoalchemy2.types import Geography
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -53,8 +53,8 @@ async def get_redis() -> aioredis.Redis | None:
             logger.info("Conectado a Redis para rate limiting distribuido")
         except Exception as e:
             logger.warning(f"Redis no disponible, usando rate limiter en memoria: {e}")
-            redis_client = False  # type: ignore
-    return redis_client if redis_client is not False else None
+            redis_client = None
+    return redis_client
 
 class DistributedRateLimiter:
     """Rate limiter con fallback a memoria si Redis no está disponible."""
@@ -242,6 +242,9 @@ class LoginRequest(BaseModel):
         if '@' not in v or len(v) > 255:
             raise ValueError('Email inválido')
         return v.strip().lower()
+
+# --- GPS Payload pattern (definido antes de RegisterDriverRequest que lo usa) ---
+BUS_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.]{1,100}$')
 
 class RegisterDriverRequest(BaseModel):
     email: str
@@ -535,7 +538,6 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 # --- GPS Payload ---
-BUS_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.]{1,100}$')
 
 class GPSPayload(BaseModel):
     bus_id: str

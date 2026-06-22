@@ -84,6 +84,8 @@ async function loadRoutes() {
         renderRoutes(geojsonData);
     } catch (error) {
         console.error('Error cargando rutas:', error);
+        stopListEl.innerHTML = '<div class="empty-state" style="color:#ef4444">❌ Error al cargar rutas.<br>Verifica tu conexión e intenta recargar.</div>';
+        routesGeoJSON = null;
     }
 }
 

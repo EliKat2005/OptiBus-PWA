@@ -85,6 +85,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirstWithCache(event.request));
     return;
   }
+
+  // Admin dashboard: NUNCA cachear (contiene datos dinámicos)
+  if (url.pathname === '/admin') {
+    // Pasar directo, sin cachear
+    return;
+  }
   
   // Para assets propios y navegación: Cache First, Network fallback
   event.respondWith(cacheFirstWithNetworkFallback(event.request));

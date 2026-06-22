@@ -54,7 +54,7 @@ log "Encontrados: $GPX_COUNT archivos GPX, $JSON_COUNT archivos JSON"
 INGESTED=0
 SKIPPED=0
 
-find "$SEED_DIR" -maxdepth 1 -name '*.gpx' | sort | while read -r GPX_FILE; do
+while IFS= read -r GPX_FILE; do
     BASENAME=$(basename "$GPX_FILE" .gpx)
     # Extraer nombre base sin prefijo 'ruta_'
     CLEAN_NAME=$(echo "$BASENAME" | sed 's/^ruta_//' | tr '_' ' ')
@@ -96,7 +96,7 @@ find "$SEED_DIR" -maxdepth 1 -name '*.gpx' | sort | while read -r GPX_FILE; do
         warn "   No se encontró archivo JSON de paradas para '$BASENAME'"
         SKIPPED=$((SKIPPED + 1))
     fi
-done
+done < <(find "$SEED_DIR" -maxdepth 1 -name '*.gpx' | sort)
 
 echo ""
 log "Ingesta completada. Rutas procesadas."

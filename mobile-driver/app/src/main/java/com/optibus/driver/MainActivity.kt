@@ -96,7 +96,6 @@ class MainActivity : Activity() {
                 RouteRecorderService.BROADCAST_EXPORT_DONE -> {
                     val points = intent.getIntExtra(RouteRecorderService.EXTRA_POINT_COUNT, 0)
                     val stops = intent.getIntExtra(RouteRecorderService.EXTRA_STOP_COUNT, 0)
-                    intent.getStringExtra(RouteRecorderService.EXTRA_EXPORT_FILES) ?: ""
 
                     runOnUiThread {
                         isRecording = false
@@ -385,7 +384,6 @@ class MainActivity : Activity() {
             val stopName = input.text.toString().trim().ifEmpty {
                 "Parada ${stopCount + 1}"
             }
-            stopName
 
             val serviceIntent = Intent(this, RouteRecorderService::class.java).apply {
                 action = RouteRecorderService.ACTION_ADD_STOP
