@@ -407,7 +407,7 @@ async def health_check():
     redis_status = "unknown"
     try:
         async with engine.connect() as conn:
-            await conn.scalar(select(func.literal(1)))
+            await conn.execute(text("SELECT 1"))
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {type(e).__name__}"
