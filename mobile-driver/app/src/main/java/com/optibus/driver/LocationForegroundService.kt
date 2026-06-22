@@ -50,7 +50,6 @@ class LocationForegroundService : Service(), LocationListener {
         // Reiniciamos websocket si cambia / arranca
         reconnectAttempts = 0
         reconnectDelay = 1000L
-        initWebSocket(serverIp)
 
         val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
@@ -77,6 +76,8 @@ class LocationForegroundService : Service(), LocationListener {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        // Iniciar WebSocket DESPUÉS de startForeground para asegurar serverIp inicializado
+        initWebSocket(serverIp)
         return START_STICKY
     }
 

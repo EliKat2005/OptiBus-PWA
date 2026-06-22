@@ -29,11 +29,7 @@
     }
 
     handle /admin {
-        @internal {
-            remote_ip 127.0.0.1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
-        }
-        reverse_proxy @internal api:8000
-        respond "Acceso denegado" 403
+        reverse_proxy api:8000
     }
 
     # 3. Redirigir peticiones API al backend de FastAPI

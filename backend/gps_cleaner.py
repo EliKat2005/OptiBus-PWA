@@ -27,7 +27,7 @@ from typing import List, Tuple, Optional
 # Constantes calibradas para bus urbano en ciudad latinoamericana
 # ---------------------------------------------------------------------------
 MAX_SPEED_KMH = 150.0                # Velocidad máxima irreal para bus urbano (tolerante con GPS de celular)
-MAX_SPEED_M_S = MAX_SPEED_KMH / 3.6  # 22.22 m/s
+MAX_SPEED_M_S = MAX_SPEED_KMH / 3.6  # 41.67 m/s (= 150 km/h)
 MIN_DISTANCE_M = 2.0                 # Distancia mínima entre puntos (anti-ruido)
 MULTIPATH_JUMP_M = 50.0              # Salto sospechoso que activa detección multipath
 MULTIPATH_RETURN_M = 30.0            # Si el siguiente punto retorna a <30m del origen,

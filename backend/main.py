@@ -43,18 +43,33 @@ logger = logging.getLogger("optibus-api")
 # --- Redis para rate limiting distribuido ---
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 redis_client: aioredis.Redis | None = None
+_redis_last_attempt: float = 0.0
+_REDIS_RETRY_INTERVAL = 30  # segundos entre reintentos de conexión
 
 async def get_redis() -> aioredis.Redis | None:
-    global redis_client
-    if redis_client is None:
+    """Obtiene cliente Redis con reintento periódico cada 30s si falló antes."""
+    global redis_client, _redis_last_attempt
+    now = time.time()
+    # Si ya tenemos cliente conectado, lo devolvemos (con ping rápido para verificar)
+    if redis_client is not None:
+        try:
+            await redis_client.ping()
+            return redis_client
+        except Exception:
+            logger.warning("Redis desconectado. Reintentando conexión...")
+            redis_client = None
+    # Intentar conectar si no lo hemos intentado en los últimos N segundos
+    if now - _redis_last_attempt >= _REDIS_RETRY_INTERVAL:
+        _redis_last_attempt = now
         try:
             redis_client = aioredis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
             await redis_client.ping()
             logger.info("Conectado a Redis para rate limiting distribuido")
+            return redis_client
         except Exception as e:
-            logger.warning(f"Redis no disponible, usando rate limiter en memoria: {e}")
+            logger.warning(f"Redis no disponible ({type(e).__name__}), usando rate limiter en memoria. Reintento en {_REDIS_RETRY_INTERVAL}s")
             redis_client = None
-    return redis_client
+    return None
 
 class DistributedRateLimiter:
     """Rate limiter con fallback a memoria si Redis no está disponible."""

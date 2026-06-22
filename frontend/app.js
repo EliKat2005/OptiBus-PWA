@@ -717,7 +717,8 @@ async function planRoute() {
         // Destacar la primera ruta del plan en el mapa
         if (data.plan && data.plan.length > 0) {
             const firstRoute = data.plan[0];
-            showRouteDetail(firstRoute.route_id);
+            const routeId = firstRoute.routeId || firstRoute.route_id; // soporta camelCase y snake_case
+            if (routeId != null) showRouteDetail(routeId);
         }
     } catch (e) {
         resultEl.textContent = 'Error de conexión';
