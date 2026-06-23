@@ -29,21 +29,21 @@
     }
 
     handle /admin {
-        reverse_proxy api:8000
+        reverse_proxy optibus_api:8000
     }
 
     # 3. Redirigir peticiones API al backend de FastAPI
     handle /health {
-        reverse_proxy api:8000
+        reverse_proxy optibus_api:8000
     }
     
     handle /api/* {
-        reverse_proxy api:8000
+        reverse_proxy optibus_api:8000
     }
 
     # 4. WebSocket - Configuración explícita para WS
     handle /ws {
-        reverse_proxy api:8000 {
+        reverse_proxy optibus_api:8000 {
             # Headers específicos para WebSocket
             header_up Upgrade {http.request.header.Upgrade}
             header_up Connection {http.request.header.Connection}
