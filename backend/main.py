@@ -248,15 +248,20 @@ def decode_jwt_token(token: str) -> dict:
         raise pyjwt.InvalidTokenError(str(e))
 
 # ── Modelos Pydantic para Auth ──
+def _validate_email(v: str) -> str:
+    """Valida y sanitiza email: debe contener @ y tener ≤255 chars."""
+    v = v.strip().lower()
+    if '@' not in v or len(v) > 255:
+        raise ValueError('Email inválido')
+    return v
+
 class LoginRequest(BaseModel):
     email: str
     password: str
     @field_validator('email')
     @classmethod
     def validate_email(cls, v):
-        if '@' not in v or len(v) > 255:
-            raise ValueError('Email inválido')
-        return v.strip().lower()
+        return _validate_email(v)
 
 # --- GPS Payload pattern (definido antes de RegisterDriverRequest que lo usa) ---
 BUS_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.]{1,100}$')
@@ -271,9 +276,7 @@ class RegisterDriverRequest(BaseModel):
     @field_validator('email')
     @classmethod
     def validate_email(cls, v):
-        if '@' not in v or len(v) > 255:
-            raise ValueError('Email inválido')
-        return v.strip().lower()
+        return _validate_email(v)
     @field_validator('bus_id')
     @classmethod
     def validate_bus_id(cls, v):
@@ -411,7 +414,11 @@ app.add_middleware(
 # Rate limiting
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    client_ip = request.client.host if request.client else "unknown"
+    # DevSecOps: Usar X-Forwarded-For si existe (detrás de Caddy/Proxy)
+    client_ip = (
+        request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or (request.client.host if request.client else "unknown")
+    )
     if not await rate_limiter.is_allowed(client_ip):
         logger.warning(f"Rate limit excedido para IP: {client_ip}")
         return JSONResponse(status_code=429, content={"detail": "Demasiadas solicitudes."})
@@ -455,44 +462,49 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
             logger.debug(f"Redis cache miss: {e}")
     
     # Cargar rutas con sus paradas en una sola consulta (eager loading)
+    # E1: Eliminado N+1 queries — las coordenadas de stops se obtienen
+    # en la misma consulta con ST_Y/ST_X directamente en lugar de consulta individual
     result = await db.execute(
-        select(models.Route).options(
-            selectinload(models.Route.stops)
+        select(
+            models.Route.id,
+            models.Route.name,
+            func.ST_AsGeoJSON(models.Route.geom).label('route_geojson')
         ).order_by(models.Route.id)
     )
-    routes = result.scalars().all()
+    route_rows = result.all()
+    
+    # Cargar TODAS las paradas de TODAS las rutas en UNA sola consulta
+    route_ids = [row.id for row in route_rows]
+    stops_by_route: dict = {rid: [] for rid in route_ids}
+    if route_ids:
+        stops_result = await db.execute(
+            select(
+                models.Stop.id,
+                models.Stop.name,
+                models.Stop.route_id,
+                func.ST_Y(models.Stop.geom).label('lat'),
+                func.ST_X(models.Stop.geom).label('lon')
+            ).where(models.Stop.route_id.in_(route_ids)).order_by(models.Stop.id)
+        )
+        for stop in stops_result:
+            if stop.route_id in stops_by_route:
+                stops_by_route[stop.route_id].append({
+                    "id": stop.id,
+                    "name": stop.name,
+                    "lat": round(stop.lat, 7),
+                    "lon": round(stop.lon, 7)
+                })
     
     features = []
-    for route in routes:
-        # Extraer stops con coordenadas
-        stops_list = []
-        for stop in route.stops:
-            # ST_AsGeoJSON para obtener coordenadas de la parada
-            stop_result = await db.execute(
-                select(func.ST_Y(stop.geom).label('lat'), func.ST_X(stop.geom).label('lon'))
-            )
-            stop_coords = stop_result.one()
-            stops_list.append({
-                "id": stop.id,
-                "name": stop.name,
-                "lat": round(stop_coords.lat, 7),
-                "lon": round(stop_coords.lon, 7)
-            })
-        
-        # Obtener geometría de la ruta
-        geom_result = await db.execute(
-            select(func.ST_AsGeoJSON(route.geom))
-        )
-        geojson_str = geom_result.scalar_one()
-        
+    for row in route_rows:
         features.append({
             "type": "Feature",
             "properties": {
-                "id": route.id,
-                "name": route.name,
-                "stops": stops_list
+                "id": row.id,
+                "name": row.name,
+                "stops": stops_by_route.get(row.id, [])
             },
-            "geometry": json.loads(geojson_str)
+            "geometry": json.loads(row.route_geojson)
         })
     
     response = {"type": "FeatureCollection", "features": features}
@@ -530,7 +542,21 @@ async def get_nearby_stops(
     return {"radius_meters": radius_meters, "nearby_stops": stops}
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(default=None)):
+    # DevSecOps: Autenticación opcional vía query param (token JWT o API Key)
+    if API_KEY_ENABLED and token:
+        if compare_digest(token, OPTIBUS_API_KEY):
+            logger.info("WebSocket autenticado con API Key")
+        else:
+            try:
+                decode_jwt_token(token)
+                logger.info("WebSocket autenticado con JWT")
+            except Exception:
+                logger.warning("WebSocket rechazado: token inválido")
+                await websocket.close(code=4001, reason="Token inválido")
+                return
+    elif API_KEY_ENABLED:
+        logger.warning("WebSocket sin token de autenticación")
     await manager.connect(websocket)
     try:
         while True:

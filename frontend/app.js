@@ -461,8 +461,8 @@ function buildSearchIndex(geojsonData) {
         const routeName = feature.properties.name;
         const color = CONFIG.routeColors[routeIndex % CONFIG.routeColors.length];
         const stops = feature.properties.stops || [];
-        stops.forEach(stop => {
-            searchIndex.push({ name: stop.name || `Parada ${stops.indexOf(stop)+1}`, lat: stop.lat, lon: stop.lon, routeId, routeName, routeColor: color });
+        stops.forEach((stop, idx) => {
+            searchIndex.push({ name: stop.name || `Parada ${idx+1}`, lat: stop.lat, lon: stop.lon, routeId, routeName, routeColor: color });
         });
         searchIndex.push({ name: routeName, lat: null, lon: null, routeId, routeName, routeColor: color, isRoute: true });
     });

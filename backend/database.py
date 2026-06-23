@@ -35,8 +35,8 @@ ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg:/
 engine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=False,  # Deshabilitar echo en producción por seguridad y rendimiento
-    pool_size=5,
-    max_overflow=10,
+    pool_size=10,
+    max_overflow=20,
     pool_pre_ping=True,  # Verificar conexiones antes de usarlas
     pool_recycle=3600,   # Reciclar conexiones cada hora
 )

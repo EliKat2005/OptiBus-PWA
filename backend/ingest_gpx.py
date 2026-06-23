@@ -136,7 +136,7 @@ async def ingest_gpx(
                 clean_xml = build_clean_gpx_from_points(
                     cleaned_points,
                     name=gpx.name or route_name,
-                    description=getattr(gpx, 'description', None) or f"Ruta limpiada automáticamente - {route_name}",
+                    description=getattr(gpx, 'description', '') or f"Ruta limpiada automáticamente - {route_name}",
                     creator="OptiBus GPS Cleaner (DevSecOps)",
                 )
                 # Backup del original con sufijo .bak

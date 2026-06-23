@@ -95,9 +95,9 @@ backup_before_deploy() {
     # Guardar git commit actual
     git rev-parse HEAD > "$BACKUP_DIR/git_commit_${TIMESTAMP}.txt" 2>/dev/null || true
 
-    # Limpiar backups antiguos (>5)
-    ls -t "$BACKUP_DIR"/git_commit_*.txt 2>/dev/null | tail -n +6 | xargs -r rm
-    ls -t "$BACKUP_DIR"/db_data_*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm
+    # Limpiar backups antiguos (mantener solo los 3 más recientes)
+    ls -t "$BACKUP_DIR"/git_commit_*.txt 2>/dev/null | tail -n +4 | xargs -r rm
+    ls -t "$BACKUP_DIR"/db_data_*.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm
 
     log "✅ Backup guardado en $BACKUP_DIR/"
 }
