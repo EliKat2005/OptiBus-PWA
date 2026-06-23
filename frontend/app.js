@@ -655,17 +655,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('side-panel')?.classList.toggle('collapsed');
     });
 
-    // ── Selector de idioma ──
-    const langToggle = document.getElementById('lang-toggle');
-    if (langToggle) {
-        langToggle.textContent = i18n.getLang().toUpperCase();
-        langToggle.addEventListener('click', () => {
-            const next = i18n.getLang() === 'es' ? 'en' : 'es';
-            i18n.setLang(next);
-            langToggle.textContent = next.toUpperCase();
-        });
-    }
-
     // ── Planificador de viaje ──
     const planSubmit = document.getElementById('plan-submit');
     if (planSubmit) {

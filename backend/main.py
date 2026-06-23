@@ -1164,6 +1164,19 @@ async def upload_recorded_route(
     # Limpiar y filtrar outliers usando gps_cleaner
     cleaned_points = clean_gps_track(raw_points, max_speed_kmh=max_speed_kmh)
     removed = len(raw_points) - len(cleaned_points)
+
+    # --- Snap to Road (OSRM map-matching al estilo Uber/InDrive) ---
+    try:
+        from utils.osrm_snap import snap_to_roads
+        snapped = await snap_to_roads(cleaned_points)
+        if snapped and len(snapped) >= 2:
+            logger.info(f"OSRM snapped: {len(cleaned_points)} pts → {len(snapped)} road-matched pts")
+            # Reemplazar puntos limpios con la versión alineada a carreteras
+            cleaned_points = [(lat, lon, cleaned_points[0][2]) for lon, lat in snapped]
+            # Recalcular removed count
+            removed = len(raw_points) - len(cleaned_points)
+    except Exception:
+        logger.debug("OSRM snapping skipped (not available or failed)")
     if removed > 0:
         logger.info(f"GPS cleaner eliminó {removed} de {len(raw_points)} puntos (outliers/ruido)")
 

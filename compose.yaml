@@ -196,6 +196,42 @@ services:
     networks:
       - backend_net
 
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    container_name: optibus_osrm
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - osrm_data:/data
+    environment:
+      - OSRM_FILE=/data/ecuador-latest.osrm
+    command: >
+      sh -c "
+      if [ ! -f /data/ecuador-latest.osrm ]; then
+        echo '⚠️  No OSRM map found at /data/ecuador-latest.osrm. Please download Ecuador map.';
+        echo 'Serving API anyway (will return 503 until map is loaded).';
+        osrm-routed --algorithm=mld /data/ecuador-latest.osrm 2>&1 || echo 'Waiting for map...';
+      else
+        osrm-routed --algorithm=mld /data/ecuador-latest.osrm;
+      fi
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/nearest/v1/driving/-78.12,0.35"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    security_opt:
+      - "no-new-privileges:true"
+    restart: unless-stopped
+    networks:
+      - backend_net
+
 volumes:
   db_data:
   caddy_data:
@@ -203,6 +239,7 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
+  osrm_data:
 
 networks:
   backend_net:
