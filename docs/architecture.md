@@ -16,7 +16,7 @@ Internet → Caddy (80/443) → API FastAPI (8000)
 |------|-----------|---------|
 | **Proxy / SSL** | Caddy | 2.x |
 | **Backend** | FastAPI (Python) | 0.136+ |
-| **Base de Datos** | PostgreSQL + PostGIS | 15 + 3.4 |
+| **Base de Datos** | PostgreSQL + PostGIS | 16 + 3.4 |
 | **Caché / Rate Limit** | Redis | 7.x |
 | **Métricas** | Prometheus + Grafana | latest |
 | **Contenedores** | Podman (rootless) | 5.x |
@@ -51,4 +51,33 @@ Internet → Caddy (80/443) → API FastAPI (8000)
 - **Rate Limiting** con Redis (fallback a memoria)
 - **bcrypt** para hash de contraseñas (12 rounds)
 - **Caddy** auto HTTPS con Let's Encrypt
+- **WebSocket** con autenticación opcional (JWT/API Key)
+- **X-Forwarded-For** en rate limiter (IP real detrás de proxy)
 - **Bandit** escaneo SAST en CI/CD
+
+## Estructura del Proyecto
+
+```
+OptiBus-PWA/
+├── backend/
+│   ├── main.py              ← API FastAPI (1425 líneas)
+│   ├── models.py             ← ORM: Route, Stop, BusPosition, Driver, ApiKey
+│   ├── database.py           ← Conexión asyncpg + SQLAlchemy
+│   ├── ingest_gpx.py         ← Ingesta de rutas GPX
+│   ├── ingest_stops.py       ← Ingesta de paradas JSON
+│   ├── utils/
+│   │   └── gps_cleaner.py    ← Filtro GPS (multipath, velocidad, ruido)
+│   ├── tests/                ← Tests de integración (pytest-asyncio)
+│   ├── Dockerfile             ← Imagen Python 3.13 (uv + no root)
+│   └── requirements.txt       ← Versiones congeladas (==)
+├── scripts/
+│   ├── deploy.sh             ← Despliegue production-grade
+│   ├── generate_env.sh       ← Generador de secretos
+│   ├── seed_db.sh            ← Auto-ingesta de GPX/JSON
+│   └── batch_clean_gpx.py    ← Limpieza batch de archivos GPX
+├── deploy/
+│   └── config/               ← Configs de Prometheus y Grafana
+├── frontend/                 ← PWA estática (Caddy sirve /srv/frontend)
+├── mobile-driver/            ← APK Android (Kotlin)
+└── pyproject.toml            ← Config pytest + ruff + mypy
+```
