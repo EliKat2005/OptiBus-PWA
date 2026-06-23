@@ -64,7 +64,7 @@ while IFS= read -r GPX_FILE; do
 
     # Ingesta del GPX
     echo "   Ingestando ruta..."
-    if podman exec optibus_api python3 ingest_gpx.py "backend/seed_data/$(basename "$GPX_FILE")" "$CLEAN_NAME"; then
+    if podman exec optibus_api python3 ingest_gpx.py "/app/backend/seed_data/$(basename "$GPX_FILE")" "$CLEAN_NAME"; then
         echo -e "   ${GREEN}✅ Ruta ingerida${NC}"
     else
         echo -e "   ${RED}❌ Fallo la ingesta del GPX${NC}"
@@ -77,7 +77,7 @@ while IFS= read -r GPX_FILE; do
     if [ -f "$JSON_FILE_1" ]; then
         echo "   Encontrado archivo de paradas: $(basename "$JSON_FILE_1")"
         echo "   Ingestando paradas..."
-        if podman exec optibus_api python3 ingest_stops.py "backend/seed_data/$(basename "$JSON_FILE_1")"; then
+        if podman exec optibus_api python3 ingest_stops.py "/app/backend/seed_data/$(basename "$JSON_FILE_1")"; then
             echo -e "   ${GREEN}✅ Paradas ingeridas${NC}"
         else
             echo -e "   ${RED}❌ Fallo la ingesta de paradas${NC}"
@@ -86,7 +86,7 @@ while IFS= read -r GPX_FILE; do
     elif [ -f "$JSON_FILE_2" ]; then
         echo "   Encontrado archivo de paradas: $(basename "$JSON_FILE_2")"
         echo "   Ingestando paradas..."
-        if podman exec optibus_api python3 ingest_stops.py "backend/seed_data/$(basename "$JSON_FILE_2")"; then
+        if podman exec optibus_api python3 ingest_stops.py "/app/backend/seed_data/$(basename "$JSON_FILE_2")"; then
             echo -e "   ${GREEN}✅ Paradas ingeridas${NC}"
         else
             echo -e "   ${RED}❌ Fallo la ingesta de paradas${NC}"
