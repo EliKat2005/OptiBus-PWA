@@ -23,7 +23,7 @@ from typing import List, Tuple
 import gpxpy
 from gpxpy.gpx import GPX
 
-from gps_cleaner import clean_gps_track, cleaning_stats, MAX_SPEED_KMH, MIN_DISTANCE_M, SMOOTH_WINDOW
+from utils.gps_cleaner import clean_gps_track, cleaning_stats, MAX_SPEED_KMH, MIN_DISTANCE_M, SMOOTH_WINDOW
 
 logging.basicConfig(
     level=logging.INFO,
@@ -192,7 +192,7 @@ def process_single_file(
         logger.error(f"Error limpiando {gpx_path.name}: {e}", exc_info=True)
         return {"error": str(e), "file": str(gpx_path)}
     cleaned_count = len(cleaned_points)
-    from gps_cleaner import parse_iso_time, haversine, speed_kmh_between, COORD_PRECISION
+    from utils.gps_cleaner import parse_iso_time, haversine, speed_kmh_between, COORD_PRECISION
     parsed = []
     for lat, lon, ts in raw_points:
         uts = parse_iso_time(ts)

@@ -1,31 +1,37 @@
-# ==== Ignorar en contexto Docker ====
-.git/
-.gitignore
-.dockerignore
-docs/
-scripts/
-README.md
-compose.yaml
-mobile-driver/
-.vscode/
-
-# ==== Python ====
+# Python
 __pycache__/
 *.py[cod]
+*.egg-info/
+dist/
 .venv/
-venv/
-env/
 
-# ==== CI/CD ====
-.github/
-
-# ==== Monitoreo ====
-prometheus.yml
-grafana-datasources.yml
-
-# ==== Secretos ====
-.env*
-*.jks
-*.keystore
+# Secrets & Environment
+.env
+.env.*
 *.pem
 *.key
+secrets/
+
+# Data & Backups
+backend/seed_data/
+backend/data/
+.deploy_backups/
+db_data/
+
+# Dev
+.git/
+.idea/
+.vscode/
+*.swp
+
+# Mobile
+mobile-driver/
+
+# CI/CD
+.github/
+
+# Docs
+docs/
+
+# Dependencies
+uv.lock

@@ -1,11 +1,15 @@
 {
   "name": "OptiBus PWA",
   "short_name": "OptiBus",
+  "lang": "es",
   "description": "Rastreo de rutas y transporte público de Ibarra en tiempo real.",
   "start_url": "index.html",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#ffffff",
   "theme_color": "#2563eb",
+  "categories": ["navigation", "transportation", "travel"],
   "icons": [
     {
       "src": "icons/icon-192.png",

@@ -37,7 +37,7 @@ mobile-driver/**/*.iml
 *.crt
 *.p12
 secrets/
-config/credentials.*
+deploy/config/credentials.*
 
 # ==== Android Keystore Properties (credentials) ====
 mobile-driver/keystore.properties
@@ -59,3 +59,5 @@ backend/data/*
 
 # ==== Deploy artifacts (no versionar) ====
 .deploy_backups/
+deploy/config/prometheus.yml
+deploy/config/grafana-datasources.yml

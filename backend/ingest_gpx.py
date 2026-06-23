@@ -33,7 +33,7 @@ import gpxpy
 
 from database import SessionLocal
 from models import Route
-from gps_cleaner import clean_gps_track_with_stats
+from utils.gps_cleaner import clean_gps_track_with_stats
 
 # ────────────────────────────────────────────────
 # Configuración de logging

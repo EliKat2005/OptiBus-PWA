@@ -30,7 +30,7 @@ import math
 import gpxpy
 import aiofiles
 from pathlib import Path
-from gps_cleaner import clean_gps_track
+from utils.gps_cleaner import clean_gps_track
 
 # --- Logging estructurado ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

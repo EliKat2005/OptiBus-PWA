@@ -20,8 +20,5 @@ RUN chown -R appuser:appuser /app
 # DevSecOps: Ejecutar como usuario sin privilegios root
 USER appuser
 
-# Healthcheck para el contenedor (DevSecOps: detección temprana de fallos)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
+# DevSecOps: Healthcheck gestionado por podman-compose (OCI no soporta HEALTHCHECK en imagen)
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
