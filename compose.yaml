@@ -196,41 +196,6 @@ services:
     networks:
       - backend_net
 
-  osrm:
-    image: ghcr.io/project-osrm/osrm-backend:latest
-    container_name: optibus_osrm
-    ports:
-      - "127.0.0.1:5000:5000"
-    volumes:
-      - osrm_data:/data
-    environment:
-    command: >
-      sh -c '
-      if [ -f /data/ecuador-latest.osrm ]; then
-        echo "🚀 Iniciando OSRM con mapa de Ecuador...";
-        exec osrm-routed --algorithm=mld /data/ecuador-latest.osrm;
-      else
-        echo "⚠️  No map found. Download with: curl -L -o /tmp/ecuador-latest.osm.pbf https://download.geofabrik.de/south-america/ecuador-latest.osm.pbf && podman cp /tmp/ecuador-latest.osm.pbf optibus_osrm:/data/ && podman exec optibus_osrm osrm-extract -p /opt/osrm-backend/profiles/car.lua /data/ecuador-latest.osm.pbf && podman exec optibus_osrm osrm-partition /data/ecuador-latest.osrm && podman exec optibus_osrm osrm-customize /data/ecuador-latest.osrm && podman restart optibus_osrm";
-        exec sleep 3600;
-      fi
-      '
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:5000/nearest/v1/driving/-78.12,0.35"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 1G
-    security_opt:
-      - "no-new-privileges:true"
-    restart: unless-stopped
-    networks:
-      - backend_net
-
 volumes:
   db_data:
   caddy_data:
@@ -238,7 +203,6 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
-  osrm_data:
 
 networks:
   backend_net:
