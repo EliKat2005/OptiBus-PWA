@@ -1,8 +1,20 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Index, Boolean, CheckConstraint
-from geoalchemy2 import Geometry
-from sqlalchemy.orm import relationship
+from datetime import UTC, datetime
+
 from database import Base
-from datetime import datetime, timezone
+from geoalchemy2 import Geometry
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+)
+from sqlalchemy.orm import relationship
+
 
 class ApiKey(Base):
     """API Keys con roles, expiry y auditoría (DevSecOps)."""
@@ -15,7 +27,7 @@ class ApiKey(Base):
     scopes = Column(String(500), default="")  # scope separados por coma: "gps,routes,admin"
     expires_at = Column(DateTime(timezone=True), nullable=True)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     is_active = Column(Boolean, default=True, index=True)
 
     __table_args__ = (
@@ -37,7 +49,7 @@ class Driver(Base):
     reset_token_expires_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft-delete
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 class Route(Base):
     __tablename__ = "routes"
@@ -45,8 +57,8 @@ class Route(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
     geom = Column(Geometry(geometry_type='LINESTRING', srid=4326), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(UTC))
 
     stops = relationship("Stop", back_populates="route", cascade="all, delete-orphan")
 
@@ -81,7 +93,7 @@ class BusPosition(Base):
     geom = Column(Geometry(geometry_type='POINT', srid=4326), nullable=False)
     speed = Column(Float, default=0.0)
     route_id = Column(Integer, nullable=True)
-    recorded_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    recorded_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
 
     __table_args__ = (
         Index('idx_bus_positions_bus_time', 'bus_id', 'recorded_at'),

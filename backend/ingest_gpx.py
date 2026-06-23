@@ -30,7 +30,6 @@ import sys
 from pathlib import Path
 
 import gpxpy
-
 from database import SessionLocal
 from models import Route
 from utils.gps_cleaner import clean_gps_track_with_stats
@@ -85,7 +84,7 @@ async def ingest_gpx(
 
     # ── 1. Leer archivo GPX ──
     try:
-        with open(file_path, 'r', encoding='utf-8') as gpx_file:
+        with open(file_path, encoding='utf-8') as gpx_file:
             gpx = gpxpy.parse(gpx_file)
     except Exception as e:
         logger.error(f"Error al leer el archivo GPX: {e}")

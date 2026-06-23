@@ -17,11 +17,10 @@ Problemas que resuelve:
    reducir el ruido de alta frecuencia manteniendo la forma de la ruta.
 """
 
-import math
 import logging
+import math
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import List, Tuple, Optional
+from datetime import UTC, datetime
 
 # ---------------------------------------------------------------------------
 # Constantes calibradas para bus urbano en ciudad latinoamericana
@@ -46,7 +45,7 @@ _logger = logging.getLogger("optibus-gps-cleaner")
 @dataclass
 class CleaningResult:
     """Resultado de una operación de limpieza GPS con estadísticas."""
-    points: List[Tuple[float, float, str]]
+    points: list[tuple[float, float, str]]
     stats: dict = field(default_factory=dict)
 
 
@@ -56,7 +55,7 @@ class CleaningResult:
 
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Distancia en metros entre dos coordenadas (fórmula Haversine)."""
-    R = 6371000.0  # Radio medio terrestre en metros
+    earth_radius = 6371000.0  # Radio medio terrestre en metros
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
     a = (
@@ -65,7 +64,7 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         * math.cos(math.radians(lat2))
         * math.sin(dlon / 2) ** 2
     )
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return earth_radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 def speed_kmh_between(
@@ -84,7 +83,7 @@ def speed_kmh_between(
 # Parseo de timestamps
 # ---------------------------------------------------------------------------
 
-def parse_iso_time(iso_time: str) -> Optional[float]:
+def parse_iso_time(iso_time: str) -> float | None:
     """
     Convierte timestamp ISO 8601 a segundos Unix (float).
     Soporta formatos con Z, +00:00, y fracciones de segundo.
@@ -108,7 +107,7 @@ def parse_iso_time(iso_time: str) -> Optional[float]:
         try:
             dt = datetime.strptime(ts, fmt)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
             return dt.timestamp()
         except ValueError:
             continue
@@ -121,11 +120,11 @@ def parse_iso_time(iso_time: str) -> Optional[float]:
 # ---------------------------------------------------------------------------
 
 def clean_gps_track(
-    points: List[Tuple[float, float, str]],
+    points: list[tuple[float, float, str]],
     max_speed_kmh: float = MAX_SPEED_KMH,
     min_distance_m: float = MIN_DISTANCE_M,
     smooth_window: int = SMOOTH_WINDOW,
-) -> List[Tuple[float, float, str]]:
+) -> list[tuple[float, float, str]]:
     """
     Limpia una trayectoria GPS cruda aplicando filtros en cascada.
 
@@ -149,7 +148,7 @@ def clean_gps_track(
 
 
 def clean_gps_track_with_stats(
-    points: List[Tuple[float, float, str]],
+    points: list[tuple[float, float, str]],
     max_speed_kmh: float = MAX_SPEED_KMH,
     min_distance_m: float = MIN_DISTANCE_M,
     smooth_window: int = SMOOTH_WINDOW,
@@ -177,7 +176,7 @@ def clean_gps_track_with_stats(
     # ------------------------------------------------------------------
     # Paso 1: Parsear timestamps y ordenar cronológicamente
     # ------------------------------------------------------------------
-    parsed: List[Tuple[float, float, str, float]] = []
+    parsed: list[tuple[float, float, str, float]] = []
     skipped_no_time = 0
 
     for lat, lon, ts in points:
@@ -206,7 +205,7 @@ def clean_gps_track_with_stats(
     # ------------------------------------------------------------------
     # Paso 2: Deduplicación
     # ------------------------------------------------------------------
-    deduped: List[Tuple[float, float, str, float]] = []
+    deduped: list[tuple[float, float, str, float]] = []
     seen: set = set()
 
     for lat, lon, ts, unix_ts in parsed:
@@ -232,7 +231,7 @@ def clean_gps_track_with_stats(
     # ------------------------------------------------------------------
     # Paso 3: Detección MULTIPATH / GHOST
     # ------------------------------------------------------------------
-    forward_time: List[Tuple[float, float, str, float]] = [deduped[0]]
+    forward_time: list[tuple[float, float, str, float]] = [deduped[0]]
     for i in range(1, len(deduped)):
         curr = deduped[i]
         last_valid = forward_time[-1]
@@ -250,7 +249,7 @@ def clean_gps_track_with_stats(
         )
 
     if len(forward_time) >= 3:
-        filtered_time: List[Tuple[float, float, str, float]] = [forward_time[0]]
+        filtered_time: list[tuple[float, float, str, float]] = [forward_time[0]]
         i = 1
         while i < len(forward_time) - 1:
             prev = filtered_time[-1]
@@ -291,7 +290,7 @@ def clean_gps_track_with_stats(
     # ------------------------------------------------------------------
     # Paso 4: Filtro de VELOCIDAD
     # ------------------------------------------------------------------
-    speed_filtered: List[Tuple[float, float, str, float]] = [forward_time[0]]
+    speed_filtered: list[tuple[float, float, str, float]] = [forward_time[0]]
 
     for i in range(1, len(forward_time)):
         prev = speed_filtered[-1]
@@ -327,7 +326,7 @@ def clean_gps_track_with_stats(
     # ------------------------------------------------------------------
     # Paso 5: Filtro de DISTANCIA MÍNIMA (ruido estático)
     # ------------------------------------------------------------------
-    dist_filtered: List[Tuple[float, float, str, float]] = [speed_filtered[0]]
+    dist_filtered: list[tuple[float, float, str, float]] = [speed_filtered[0]]
 
     for i in range(1, len(speed_filtered)):
         prev = dist_filtered[-1]
@@ -360,7 +359,7 @@ def clean_gps_track_with_stats(
     # ------------------------------------------------------------------
     # Paso 6: Suavizado con media móvil ponderada triangular
     # ------------------------------------------------------------------
-    smoothed: List[Tuple[float, float, str]] = []
+    smoothed: list[tuple[float, float, str]] = []
     half_window = smooth_window // 2
 
     for i in range(len(dist_filtered)):

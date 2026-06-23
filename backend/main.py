@@ -1,35 +1,46 @@
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Request, HTTPException, status, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, field_validator
-from contextlib import asynccontextmanager
-from database import engine, Base, get_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, cast, and_, desc, text
-from sqlalchemy.orm import selectinload
-from geoalchemy2.types import Geography
-from prometheus_fastapi_instrumentator import Instrumentator
-from fastapi import UploadFile, File, Form
-import models
 import asyncio
+import base64
+import hashlib
+import hmac as hmac_lib
 import json
 import logging
-import os
-import time
-import re
-from collections import defaultdict
-from secrets import compare_digest, token_urlsafe
-import hashlib
-import jwt as pyjwt
-import base64
-import hmac as hmac_lib
-from datetime import datetime, timezone, timedelta
-import redis.asyncio as aioredis
 import math
-import gpxpy
-import aiofiles
+import os
+import re
+import time
+from collections import defaultdict
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from secrets import compare_digest, token_urlsafe
+
+import aiofiles
+import gpxpy
+import jwt as pyjwt
+import models
+import redis.asyncio as aioredis
+from database import Base, engine, get_db
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from geoalchemy2.types import Geography
+from prometheus_fastapi_instrumentator import Instrumentator
+from pydantic import BaseModel, field_validator
+from sqlalchemy import and_, cast, desc, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from utils.gps_cleaner import clean_gps_track
 
 # --- Logging estructurado ---
@@ -120,21 +131,21 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials | None = Depe
             detail="API Key o JWT requerido. Usa Authorization: Bearer <token>",
         )
     token = credentials.credentials
-    
+
     # Intento 1: API Key estática (admin)
     if compare_digest(token, OPTIBUS_API_KEY):
         return {"auth_type": "api_key", "role": "admin"}
-    
+
     # Intento 2: JWT (conductor/admin) — acepta access y refresh
     try:
         payload = decode_jwt_token(token)
         payload["auth_type"] = "jwt"
         return payload  # {"auth_type": "jwt", "sub": driver_id, "bus_id": "...", "role": "...", "type": "access"|"refresh"}
-    except pyjwt.ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expirado. Usa /api/auth/refresh")
+    except pyjwt.ExpiredSignatureError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expirado. Usa /api/auth/refresh") from e
     except pyjwt.InvalidTokenError:
         pass
-    
+
     logger.warning(f"Intento de acceso con token inválido: {token[:10]}...")
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
 
@@ -163,7 +174,7 @@ def verify_password(password: str, password_hash: str) -> bool:
             return bcrypt.checkpw(password.encode(), password_hash.encode())
         except Exception:
             return False
-    
+
     # Retrocompatibilidad con hashes SHA-256 antiguos
     try:
         salt, hashed = password_hash.split(":", 1)
@@ -176,7 +187,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def _now_ts() -> float:
     """Timestamp UNIX actual (UTC)."""
-    return datetime.now(timezone.utc).timestamp()
+    return datetime.now(UTC).timestamp()
 
 def _b64url_encode(data: bytes) -> str:
     """Codifica bytes a base64url sin padding."""
@@ -194,7 +205,7 @@ def create_jwt_token(driver_id: int, bus_id: str, role: str, token_type: str = "
         exp_ts = now_ts + (ACCESS_TOKEN_EXPIRE_MINUTES * 60)
     else:
         exp_ts = now_ts + (REFRESH_TOKEN_EXPIRE_DAYS * 86400)
-    
+
     payload = {
         "sub": driver_id,
         "bus_id": bus_id,
@@ -203,15 +214,15 @@ def create_jwt_token(driver_id: int, bus_id: str, role: str, token_type: str = "
         "iat": now_ts,
         "exp": exp_ts
     }
-    
+
     header = {"alg": "HS256", "typ": "JWT"}
     header_b64 = _b64url_encode(json.dumps(header, separators=(',', ':')).encode())
     payload_b64 = _b64url_encode(json.dumps(payload, separators=(',', ':')).encode())
-    
+
     msg = f"{header_b64}.{payload_b64}".encode()
     key = JWT_SECRET.encode() if isinstance(JWT_SECRET, str) else JWT_SECRET
     sig = _b64url_encode(hmac_lib.new(key, msg, hashlib.sha256).digest())
-    
+
     return f"{header_b64}.{payload_b64}.{sig}"
 
 def decode_jwt_token(token: str) -> dict:
@@ -221,7 +232,7 @@ def decode_jwt_token(token: str) -> dict:
         if len(parts) != 3:
             raise pyjwt.InvalidTokenError("Malformed JWT: expected 3 parts")
         header_b64, payload_b64, sig_b64 = parts
-        
+
         # Verificar firma
         msg = f"{header_b64}.{payload_b64}".encode()
         key = JWT_SECRET.encode() if isinstance(JWT_SECRET, str) else JWT_SECRET
@@ -229,23 +240,23 @@ def decode_jwt_token(token: str) -> dict:
         received_sig = _b64url_decode(sig_b64)
         if not compare_digest(expected_sig, received_sig):
             raise pyjwt.InvalidTokenError("Signature verification failed")
-        
+
         # Decodificar payload
         payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
-        
+
         # Validar claims
         exp = payload.get("exp", 0)
         if _now_ts() > exp:
             raise pyjwt.ExpiredSignatureError("Token expired")
         if "sub" not in payload or "type" not in payload:
             raise pyjwt.InvalidTokenError("Missing required claims: sub or type")
-        
+
         return payload
     except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
         raise
     except Exception as e:
         logger.error(f"JWT decode failed: {type(e).__name__}: {e}")
-        raise pyjwt.InvalidTokenError(str(e))
+        raise pyjwt.InvalidTokenError(str(e)) from e
 
 # ── Modelos Pydantic para Auth ──
 def _validate_email(v: str) -> str:
@@ -326,17 +337,17 @@ manager = ConnectionManager()
 # --- Background task para simular buses (multi-ruta) ---
 async def bus_simulator():
     await asyncio.sleep(5)
-    
+
     async with engine.begin() as conn:
         result = await conn.execute(
             select(models.Route.id, func.ST_AsGeoJSON(models.Route.geom))
         )
         routes_data = result.all()
-    
+
     if not routes_data:
         logger.warning("No hay rutas para simular.")
         return
-    
+
     all_buses = []
     for route_id, geojson_str in routes_data:
         geojson = json.loads(geojson_str)
@@ -358,26 +369,26 @@ async def bus_simulator():
                 "coords": coords,
                 "route_id": route_id
             })
-    
+
     if not all_buses:
         logger.warning("No hay coordenadas válidas para simular.")
         return
-    
+
     logger.info(f"Simulador iniciado con {len(all_buses)} buses en {len(routes_data)} rutas.")
-    
+
     while True:
         if manager.active_connections:
             buses_payload = []
             for bus in all_buses:
                 lon, lat = bus["coords"][bus["idx"]]
                 buses_payload.append({"id": bus["id"], "lat": lat, "lon": lon})
-                
+
                 bus["idx"] += bus["direction"]
                 if bus["idx"] >= len(bus["coords"]) or bus["idx"] < 0:
                     bus["direction"] *= -1
                     bus["idx"] += bus["direction"] * 2
                 bus["idx"] = bus["idx"] % len(bus["coords"])
-            
+
             await manager.broadcast(json.dumps({"type": "bus_positions", "buses": buses_payload}))
         await asyncio.sleep(3)
 
@@ -385,12 +396,12 @@ async def bus_simulator():
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     task = None
     if os.getenv("ENABLE_BUS_SIMULATOR", "false").lower() == "true":
         task = asyncio.create_task(bus_simulator())
         logger.info("Simulador de buses HABILITADO (multi-ruta).")
-    
+
     yield
     if task:
         task.cancel()
@@ -460,7 +471,7 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
                 return json.loads(cached)
         except Exception as e:
             logger.debug(f"Redis cache miss: {e}")
-    
+
     # Cargar rutas con sus paradas en una sola consulta (eager loading)
     result = await db.execute(
         select(
@@ -470,7 +481,7 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
         ).order_by(models.Route.id)
     )
     route_rows = result.all()
-    
+
     # Cargar TODAS las paradas de TODAS las rutas en UNA sola consulta
     # DB7: Usar columnas lat/lon desnormalizadas si existen, si no ST_Y/ST_X
     route_ids = [row.id for row in route_rows]
@@ -493,7 +504,7 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
                     "lat": round(stop.lat, 7),
                     "lon": round(stop.lon, 7)
                 })
-    
+
     features = []
     for row in route_rows:
         features.append({
@@ -505,16 +516,16 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
             },
             "geometry": json.loads(row.route_geojson)
         })
-    
+
     response = {"type": "FeatureCollection", "features": features}
-    
+
     # Guardar en caché Redis por 60 segundos
     if redis:
         try:
             await redis.setex("cache:routes", 60, json.dumps(response, default=str))
         except Exception:
             pass
-    
+
     return response
 
 @app.get("/api/stops/nearby")
@@ -526,7 +537,7 @@ async def get_nearby_stops(
         return JSONResponse(status_code=400, content={"detail": "Coordenadas inválidas."})
     if radius_meters > 10000:
         return JSONResponse(status_code=400, content={"detail": "Radio máximo: 10000 metros."})
-    
+
     point = f"SRID=4326;POINT({lon} {lat})"
     query = select(
         models.Stop.id, models.Stop.name,
@@ -535,7 +546,7 @@ async def get_nearby_stops(
     ).where(
         func.ST_DWithin(cast(models.Stop.geom, Geography), cast(func.ST_GeomFromText(point, 4326), Geography), radius_meters)
     ).order_by('distance').limit(max_results)
-    
+
     result = await db.execute(query)
     stops = [{"id": r.id, "name": r.name, "distance": round(r.distance, 2), "geometry": json.loads(r.geojson)} for r in result]
     return {"radius_meters": radius_meters, "nearby_stops": stops}
@@ -568,7 +579,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
                     await manager.broadcast(json.dumps(data))
             except json.JSONDecodeError:
                 logger.warning(f"JSON inválido en WS: {text}")
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.info("WebSocket timeout")
     except WebSocketDisconnect:
         pass
@@ -608,7 +619,7 @@ class GPSPayload(BaseModel):
 @app.post("/api/gps/update")
 async def receive_gps(payload: GPSPayload, request: Request, _auth: None = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
     """Recibe posición GPS y la guarda en historial + broadcast."""
-    
+
     # Guardar en historial
     point = f"SRID=4326;POINT({payload.lon} {payload.lat})"
     try:
@@ -617,13 +628,13 @@ async def receive_gps(payload: GPSPayload, request: Request, _auth: None = Depen
             geom=func.ST_GeomFromText(point, 4326),
             speed=payload.speed,
             route_id=payload.route_id,
-            recorded_at=datetime.now(timezone.utc)
+            recorded_at=datetime.now(UTC)
         ))
         await db.commit()
     except Exception as e:
         logger.error(f"Error guardando posición: {e}")
         await db.rollback()
-    
+
     # Broadcast WebSocket
     await manager.broadcast(json.dumps({
         "type": "bus_positions",
@@ -656,7 +667,7 @@ async def get_bus_history(
     db: AsyncSession = Depends(get_db)
 ):
     """Obtiene el historial de posiciones de un bus en los últimos N minutos."""
-    since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    since = datetime.now(UTC) - timedelta(minutes=minutes)
     result = await db.execute(
         select(
             models.BusPosition.bus_id,
@@ -674,12 +685,12 @@ async def get_bus_history(
 @app.get("/api/bus/active")
 async def get_active_buses(_auth: None = Depends(verify_api_key), minutes: int = Query(default=5, le=60), db: AsyncSession = Depends(get_db)):
     """Lista buses activos en los últimos N minutos."""
-    since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    since = datetime.now(UTC) - timedelta(minutes=minutes)
     subq = select(
         models.BusPosition.bus_id,
         func.max(models.BusPosition.recorded_at).label('last_seen')
     ).where(models.BusPosition.recorded_at >= since).group_by(models.BusPosition.bus_id).subquery()
-    
+
     result = await db.execute(
         select(
             models.BusPosition.bus_id,
@@ -704,11 +715,11 @@ async def admin_dashboard(
 ):
     """Dashboard admin accesible vía API Key (header, query param) o JWT."""
     authed = False
-    
+
     # Método 1: Query param ?api_key=
     if api_key and API_KEY_ENABLED and compare_digest(api_key, OPTIBUS_API_KEY):
         authed = True
-    
+
     # Método 2: Header Authorization: Bearer
     if not authed:
         auth_header = request.headers.get("Authorization", "")
@@ -723,31 +734,29 @@ async def admin_dashboard(
                         authed = True
                 except Exception:
                     pass
-    
+
     if not authed:
         return JSONResponse(status_code=401, content={"detail": "Agrega ?api_key=TU_KEY a la URL o usa Authorization: Bearer <token>"})
-    
+
     # ── Obtener estadísticas reales de la BD ──
     stats = {"routes": 0, "stops": 0, "positions": 0, "ws": len(manager.active_connections)}
-    db_error = None
     try:
         r_count = await db.execute(select(func.count(models.Route.id)))
         stats["routes"] = r_count.scalar() or 0
         s_count = await db.execute(select(func.count(models.Stop.id)))
         stats["stops"] = s_count.scalar() or 0
         p_count = await db.execute(select(func.count(models.BusPosition.id)).where(
-            models.BusPosition.recorded_at >= datetime.now(timezone.utc) - timedelta(hours=24)
+            models.BusPosition.recorded_at >= datetime.now(UTC) - timedelta(hours=24)
         ))
         stats["positions"] = p_count.scalar() or 0
-    except Exception as e:
-        db_error = str(e)
+    except Exception:
+        pass
 
-    redis_ok = False
     try:
         r = await get_redis()
         if r:
             await r.ping()
-            redis_ok = True
+            pass
     except Exception:
         pass
 
@@ -805,14 +814,14 @@ async def admin_dashboard(
                     `<span><span class="status-dot ${hd.database==='connected'?'ok':'err'}"></span>DB: ${hd.database}</span>`+
                     `<span><span class="status-dot ${hd.redis==='connected'?'ok':'err'}"></span>Redis: ${hd.redis}</span>`+
                     `<span>v${hd.version}</span>`;
-                
+
                 const ab=await fetch('/api/bus/active?minutes=5', {headers: AUTH_HEADER});const abd=await ab.json();
                 document.getElementById('activeBuses').textContent=abd.active_count||0;
                 const tb=document.getElementById('busesTable');
                 tb.innerHTML=(abd.buses||[]).map(b=>
                     `<tr><td>${b.bus_id}</td><td>${b.lat.toFixed(6)}</td><td>${b.lon.toFixed(6)}</td><td>${b.speed} km/h</td><td>${new Date(b.last_seen).toLocaleTimeString()}</td></tr>`
                 ).join('')||'<tr><td colspan="5">No hay buses activos</td></tr>';
-                
+
                 const ak=await fetch('/api/auth/status', {headers: AUTH_HEADER});const akd=await ak.json();
                 document.getElementById('apiKeyStatus').textContent=akd.api_key_enabled?'🔒 Habilitada':'⚠️ Deshabilitada';
             }catch(e){
@@ -878,7 +887,7 @@ async def refresh_token(_auth: None = Depends(verify_api_key), db: AsyncSession 
         driver = result.scalar_one_or_none()
         if not driver or not driver.is_active:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Conductor no encontrado o inactivo")
-        
+
         access_token = create_jwt_token(driver.id, driver.bus_id, driver.role, "access")
         return {
             "access_token": access_token,
@@ -897,11 +906,11 @@ async def register_driver(
     auth = _auth
     if isinstance(auth, dict) and auth.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo administradores pueden registrar conductores")
-    
+
     existing = await db.execute(select(models.Driver).where(models.Driver.email == request.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El email ya está registrado")
-    
+
     driver = models.Driver(
         email=request.email,
         password_hash=hash_password(request.password),
@@ -913,7 +922,7 @@ async def register_driver(
     db.add(driver)
     await db.commit()
     await db.refresh(driver)
-    
+
     logger.info(f"Nuevo conductor registrado: {driver.email} (ID={driver.id}, bus={driver.bus_id})")
     return {
         "status": "created",
@@ -939,12 +948,12 @@ async def forgot_password(request: ForgotPasswordRequest, _auth: None = Depends(
     if not driver:
         # No revelar si el email existe
         return {"status": "ok", "message": "Si el email está registrado, el administrador recibirá la solicitud de recuperación."}
-    
+
     reset_token = token_urlsafe(32)
     driver.reset_token = hashlib.sha256(reset_token.encode()).hexdigest()
-    driver.reset_token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    driver.reset_token_expires_at = datetime.now(UTC) + timedelta(hours=1)
     await db.commit()
-    
+
     logger.info(f"Solicitud de recuperación: {driver.email} (token expira en 1h)")
     return {
         "status": "ok",
@@ -960,7 +969,7 @@ async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depen
         select(models.Driver).where(
             and_(
                 models.Driver.reset_token == token_hash,
-                models.Driver.reset_token_expires_at > datetime.now(timezone.utc),
+                models.Driver.reset_token_expires_at > datetime.now(UTC),
                 models.Driver.is_active.is_(True)
             )
         )
@@ -968,12 +977,12 @@ async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depen
     driver = result.scalar_one_or_none()
     if not driver:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token inválido o expirado")
-    
+
     driver.password_hash = hash_password(request.new_password)
     driver.reset_token = None
     driver.reset_token_expires_at = None
     await db.commit()
-    
+
     logger.info(f"Contraseña reseteada para: {driver.email}")
     return {"status": "ok", "message": "Contraseña actualizada exitosamente"}
 
@@ -987,17 +996,17 @@ async def admin_reset_password(
     auth = _auth
     if isinstance(auth, dict) and auth.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo administradores")
-    
+
     result = await db.execute(select(models.Driver).where(models.Driver.id == request.driver_id))
     driver = result.scalar_one_or_none()
     if not driver:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conductor no encontrado")
-    
+
     driver.password_hash = hash_password(request.new_password)
     driver.reset_token = None
     driver.reset_token_expires_at = None
     await db.commit()
-    
+
     logger.info(f"Admin reseteó contraseña de: {driver.email}")
     return {"status": "ok", "message": f"Contraseña actualizada para {driver.name}"}
 
@@ -1071,7 +1080,7 @@ async def estimate_eta(
     pos = last_pos.first()
     if not pos:
         return JSONResponse(status_code=404, content={"detail": "Bus sin datos recientes"})
-    
+
     # Posición de la parada
     stop = await db.execute(
         select(func.ST_Y(models.Stop.geom).label('lat'), func.ST_X(models.Stop.geom).label('lon'), models.Stop.name)
@@ -1080,20 +1089,20 @@ async def estimate_eta(
     stop_row = stop.first()
     if not stop_row:
         return JSONResponse(status_code=404, content={"detail": "Parada no encontrada"})
-    
+
     # Distancia (haversine simplificada)
-    R = 6371000
+    earth_radius_m = 6371000
     dlat = math.radians(stop_row.lat - pos.lat)
     dlon = math.radians(stop_row.lon - pos.lon)
     a = math.sin(dlat/2)**2 + math.cos(math.radians(pos.lat)) * math.cos(math.radians(stop_row.lat)) * math.sin(dlon/2)**2
-    distance_m = R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    
+    distance_m = earth_radius_m * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
     speed_ms = max(pos.speed / 3.6, 2.78) if pos.speed > 0 else 8.33  # min 10 km/h, default 30 km/h
     eta_seconds = distance_m / speed_ms
     eta_minutes = round(eta_seconds / 60, 1)
-    
-    time_diff = (datetime.now(timezone.utc) - pos.recorded_at).total_seconds() if pos.recorded_at else 0
-    
+
+    time_diff = (datetime.now(UTC) - pos.recorded_at).total_seconds() if pos.recorded_at else 0
+
     return {
         "bus_id": bus_id,
         "stop_id": stop_id,
@@ -1130,14 +1139,14 @@ async def upload_recorded_route(
     safe_route_name = re.sub(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ _\-]', '', route_name).strip()
     if not safe_route_name:
         raise HTTPException(status_code=400, detail="Nombre de ruta inválido")
-    
+
     # Leer y parsear GPX
     try:
         gpx_content = await gpx_file.read()
         gpx = gpxpy.parse(gpx_content.decode("utf-8"))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error parseando GPX: {e}")
-    
+        raise HTTPException(status_code=400, detail=f"Error parseando GPX: {e}") from e
+
     # Extraer puntos como (lat, lon, iso_time) para limpieza
     raw_points = []
     for track in gpx.tracks:
@@ -1145,32 +1154,32 @@ async def upload_recorded_route(
             for point in segment.points:
                 iso_time = point.time.isoformat() + "Z" if point.time else ""
                 raw_points.append((point.latitude, point.longitude, iso_time))
-    
+
     if len(raw_points) < 2:
         raise HTTPException(status_code=400, detail="Se requieren al menos 2 puntos GPS")
-    
+
     # F5: Ordenar puntos por timestamp antes de limpiar (el APK puede enviarlos desordenados)
     raw_points.sort(key=lambda p: p[2])  # p[2] es el iso_time
-    
+
     # Limpiar y filtrar outliers usando gps_cleaner
     cleaned_points = clean_gps_track(raw_points, max_speed_kmh=max_speed_kmh)
     removed = len(raw_points) - len(cleaned_points)
     if removed > 0:
         logger.info(f"GPS cleaner eliminó {removed} de {len(raw_points)} puntos (outliers/ruido)")
-    
+
     if len(cleaned_points) < 2:
         raise HTTPException(
             status_code=400,
             detail=f"Después de limpiar solo quedaron {len(cleaned_points)} puntos. La ruta tiene demasiado ruido GPS."
         )
-    
+
     # Convertir puntos limpios a WKT LINESTRING
     wkt_coords = [f"{lon} {lat}" for lat, lon, _ in cleaned_points]
     linestring_wkt = f"SRID=4326;LINESTRING({', '.join(wkt_coords)})"
     new_route = models.Route(name=safe_route_name, geom=linestring_wkt)
     db.add(new_route)
     await db.flush()  # Obtener el ID generado
-    
+
     # Parsear y guardar paradas
     stops_count = 0
     try:
@@ -1190,20 +1199,20 @@ async def upload_recorded_route(
                     stops_count += 1
     except json.JSONDecodeError:
         logger.warning("stops_json no es JSON válido, guardando ruta sin paradas")
-    
+
     await db.commit()
-    
+
     # Guardar copia de auditoría en backend/data/recorded_routes/
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     base_filename = f"{safe_route_name.replace(' ', '_')}_{timestamp}"
-    
+
     # Guardar GPX original
     gpx_path = RECORDED_ROUTES_DIR / f"{base_filename}.gpx"
     async with aiofiles.open(gpx_path, "wb") as f:
         await f.write(gpx_content)
-    
+
     total_points = len(cleaned_points)
-    
+
     # Guardar metadatos JSON
     meta_path = RECORDED_ROUTES_DIR / f"{base_filename}_meta.json"
     meta = {
@@ -1214,14 +1223,14 @@ async def upload_recorded_route(
         "points_clean": total_points,
         "outliers_removed": removed,
         "stops_count": stops_count,
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "recorded_at": datetime.now(UTC).isoformat(),
         "route_id": new_route.id
     }
     async with aiofiles.open(meta_path, "w") as f:
         await f.write(json.dumps(meta, indent=2, ensure_ascii=False))
-    
+
     logger.info(f"Ruta '{safe_route_name}' subida: {total_points} puntos limpios, {stops_count} paradas (ID: {new_route.id}) - {removed} outliers eliminados")
-    
+
     return {
         "status": "success",
         "route_id": new_route.id,
@@ -1276,15 +1285,15 @@ async def record_stop(
             lon=lon
         ))
         await db.commit()
-        
+
         logger.info(f"Parada '{stop_name}' registrada vía API tiempo real (bus={bus_id}, lat={lat}, lon={lon})")
-        
+
         # Broadcast a WebSocket
         await manager.broadcast(json.dumps({
             "type": "stop_recorded",
             "stop": {"name": stop_name, "lat": lat, "lon": lon, "bus_id": bus_id, "route_name": route_name}
         }))
-        
+
         return {"status": "success", "stop_name": stop_name, "lat": lat, "lon": lon}
     except Exception as e:
         logger.error(f"Error registrando parada: {e}")

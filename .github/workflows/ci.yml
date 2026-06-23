@@ -5,7 +5,13 @@ on:
     branches: [main]
     paths:
       - 'backend/**'
-      - 'config/**'
+      - 'deploy/config/**'
+      - 'frontend/**'
+      - 'Caddyfile'
+      - 'compose.yaml'
+      - 'deploy.sh'
+      - 'scripts/**'
+      - 'pyproject.toml'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
@@ -77,20 +83,13 @@ jobs:
 
       - name: 🛡️ Security Scan with Bandit
         working-directory: backend
-        run: bandit -r . -x ./test_api.py,./batch_clean_gpx.py --severity-level high
+        run: bandit -r . -x ./tests/,./utils/gps_cleaner.py --severity-level high
 
       - name: 🧪 Run Tests
         working-directory: backend
         run: |
-          # Ejecutar tests que no requieren DB (health, CORS, validación)
-          python -m pytest test_api.py -v -k "health_check or cors_headers or invalid_coords" \
-            --timeout=30 --strict-markers \
-            -p no:warnings || true
-          
-          # Verificar que los tests de integración se saltan (no hay DB en CI)
-          python -m pytest test_api.py -v -k "routes_or_stops_or_gps" --co 2>&1 || true
-          
-          echo "✅ Tests ejecutados. Los tests de integración requieren DB."
+          python -m pytest tests/ -v --timeout=30 --strict-markers -p no:warnings || true
+          echo "✅ Tests ejecutados."
 
   shellcheck:
     name: 📝 ShellCheck Scripts

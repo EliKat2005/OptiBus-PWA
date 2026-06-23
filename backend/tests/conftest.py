@@ -1,9 +1,10 @@
 """Fixtures de pytest con base de datos real para tests de integración."""
 
-import os
 import asyncio
+import os
+
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 # Forzar variables de entorno de test ANTES de importar la app
 os.environ.setdefault("POSTGRES_DB", "optibus_test")
@@ -15,8 +16,9 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6380/0")
 os.environ.setdefault("OPTIBUS_API_KEY", "test-key-32-chars-minimum!!")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:80,http://localhost")
 
+from database import Base, engine
 from main import app
-from database import engine, Base
+
 
 @pytest.fixture(scope="session")
 def event_loop():
