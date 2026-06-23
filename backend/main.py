@@ -771,24 +771,29 @@ async def admin_dashboard(
     </div>
     <div id="alert-box">⚠️ <span id="alertMessage"></span></div>
     <script>
+        const ADMIN_API_KEY = new URLSearchParams(window.location.search).get('api_key') || '';
+        const AUTH_HEADER = ADMIN_API_KEY ? {'Authorization': 'Bearer ' + ADMIN_API_KEY} : {};
         async function loadData(){
             try{
-                const h=await fetch('/health');const hd=await h.json();
+                const h=await fetch('/health', {headers: AUTH_HEADER});const hd=await h.json();
                 document.getElementById('statusBar').innerHTML=
                     `<span><span class="status-dot ${hd.database==='connected'?'ok':'err'}"></span>DB: ${hd.database}</span>`+
                     `<span><span class="status-dot ${hd.redis==='connected'?'ok':'err'}"></span>Redis: ${hd.redis}</span>`+
                     `<span>v${hd.version}</span>`;
                 
-                const ab=await fetch('/api/bus/active?minutes=5');const abd=await ab.json();
-                document.getElementById('activeBuses').textContent=abd.active_count;
+                const ab=await fetch('/api/bus/active?minutes=5', {headers: AUTH_HEADER});const abd=await ab.json();
+                document.getElementById('activeBuses').textContent=abd.active_count||0;
                 const tb=document.getElementById('busesTable');
-                tb.innerHTML=abd.buses.map(b=>
+                tb.innerHTML=(abd.buses||[]).map(b=>
                     `<tr><td>${b.bus_id}</td><td>${b.lat.toFixed(6)}</td><td>${b.lon.toFixed(6)}</td><td>${b.speed} km/h</td><td>${new Date(b.last_seen).toLocaleTimeString()}</td></tr>`
                 ).join('')||'<tr><td colspan="5">No hay buses activos</td></tr>';
                 
-                const ak=await fetch('/api/auth/status');const akd=await ak.json();
+                const ak=await fetch('/api/auth/status', {headers: AUTH_HEADER});const akd=await ak.json();
                 document.getElementById('apiKeyStatus').textContent=akd.api_key_enabled?'🔒 Habilitada':'⚠️ Deshabilitada';
-            }catch(e){console.error(e)}
+            }catch(e){
+                console.error(e);
+                document.getElementById('activeBuses').textContent='Error';
+            }
         }
         loadData();setInterval(loadData,10000);
     </script>
