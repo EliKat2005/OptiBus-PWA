@@ -204,22 +204,15 @@ services:
     volumes:
       - osrm_data:/data
     environment:
-      - OSRM_FILE=/data/ecuador-latest.osrm
     command: >
       sh -c '
-      MAP_FILE=/data/ecuador-latest.osrm;
-      if [ ! -f "$MAP_FILE" ]; then
-        echo "⬇️  Descargando mapa de Ecuador (~500 MB, tarda 1-3 min)...";
-        curl -L -o /data/ecuador-latest.osm.pbf https://download.geofabrik.de/south-america/ecuador-latest.osm.pbf;
-        echo "⚙️  Extrayendo...";
-        osrm-extract -p /opt/osrm-backend/profiles/car.lua /data/ecuador-latest.osm.pbf;
-        echo "⚙️  Particionando...";
-        osrm-partition "$MAP_FILE";
-        echo "⚙️  Personalizando...";
-        osrm-customize "$MAP_FILE";
-        echo "✅ Mapa de Ecuador listo. Iniciando OSRM...";
-      fi;
-      exec osrm-routed --algorithm=mld "$MAP_FILE"
+      if [ -f /data/ecuador-latest.osrm ]; then
+        echo "🚀 Iniciando OSRM con mapa de Ecuador...";
+        exec osrm-routed --algorithm=mld /data/ecuador-latest.osrm;
+      else
+        echo "⚠️  No map found. Download with: curl -L -o /tmp/ecuador-latest.osm.pbf https://download.geofabrik.de/south-america/ecuador-latest.osm.pbf && podman cp /tmp/ecuador-latest.osm.pbf optibus_osrm:/data/ && podman exec optibus_osrm osrm-extract -p /opt/osrm-backend/profiles/car.lua /data/ecuador-latest.osm.pbf && podman exec optibus_osrm osrm-partition /data/ecuador-latest.osrm && podman exec optibus_osrm osrm-customize /data/ecuador-latest.osrm && podman restart optibus_osrm";
+        exec sleep 3600;
+      fi
       '
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:5000/nearest/v1/driving/-78.12,0.35"]
