@@ -462,8 +462,6 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
             logger.debug(f"Redis cache miss: {e}")
     
     # Cargar rutas con sus paradas en una sola consulta (eager loading)
-    # E1: Eliminado N+1 queries — las coordenadas de stops se obtienen
-    # en la misma consulta con ST_Y/ST_X directamente en lugar de consulta individual
     result = await db.execute(
         select(
             models.Route.id,
@@ -474,6 +472,7 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
     route_rows = result.all()
     
     # Cargar TODAS las paradas de TODAS las rutas en UNA sola consulta
+    # DB7: Usar columnas lat/lon desnormalizadas si existen, si no ST_Y/ST_X
     route_ids = [row.id for row in route_rows]
     stops_by_route: dict = {rid: [] for rid in route_ids}
     if route_ids:
@@ -482,8 +481,8 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
                 models.Stop.id,
                 models.Stop.name,
                 models.Stop.route_id,
-                func.ST_Y(models.Stop.geom).label('lat'),
-                func.ST_X(models.Stop.geom).label('lon')
+                func.coalesce(models.Stop.lat, func.ST_Y(models.Stop.geom)).label('lat'),
+                func.coalesce(models.Stop.lon, func.ST_X(models.Stop.geom)).label('lon')
             ).where(models.Stop.route_id.in_(route_ids)).order_by(models.Stop.id)
         )
         for stop in stops_result:
@@ -1184,7 +1183,9 @@ async def upload_recorded_route(
                     db.add(models.Stop(
                         name=str(stop_name)[:255],
                         route_id=new_route.id,
-                        geom=stop_point
+                        geom=stop_point,
+                        lat=stop['lat'],
+                        lon=stop['lon']
                     ))
                     stops_count += 1
     except json.JSONDecodeError:
@@ -1265,12 +1266,14 @@ async def record_stop(
         else:
             route = None
 
-        # Guardar parada
+        # Guardar parada (DB7: populate lat/lon columns)
         stop_point = f"SRID=4326;POINT({lon} {lat})"
         db.add(models.Stop(
             name=str(stop_name)[:255],
             route_id=route.id if route else None,
-            geom=func.ST_GeomFromText(stop_point, 4326)
+            geom=func.ST_GeomFromText(stop_point, 4326),
+            lat=lat,
+            lon=lon
         ))
         await db.commit()
         

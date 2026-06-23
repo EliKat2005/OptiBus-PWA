@@ -1,8 +1,26 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Index, Boolean
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Index, Boolean, CheckConstraint
 from geoalchemy2 import Geometry
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime, timezone
+
+class ApiKey(Base):
+    """API Keys con roles, expiry y auditoría (DevSecOps)."""
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    key_hash = Column(String(255), nullable=False, index=True)  # SHA-256 de la key
+    role = Column(String(20), default="admin", index=True)  # "admin", "readonly", "gps"
+    scopes = Column(String(500), default="")  # scope separados por coma: "gps,routes,admin"
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    is_active = Column(Boolean, default=True, index=True)
+
+    __table_args__ = (
+        Index('idx_api_keys_active', 'is_active', 'expires_at'),
+    )
 
 class Driver(Base):
     """Conductores y administradores con autenticación JWT."""
@@ -15,9 +33,10 @@ class Driver(Base):
     bus_id = Column(String(50), nullable=False, default="Bus-1")
     company = Column(String(100), nullable=True)
     role = Column(String(20), default="driver", index=True)
-    reset_token = Column(String(64), nullable=True)
+    reset_token = Column(String(128), nullable=True)  # Ampliado a 128 para bcrypt/token_urlsafe
     reset_token_expires_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft-delete
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class Route(Base):
@@ -26,8 +45,10 @@ class Route(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
     geom = Column(Geometry(geometry_type='LINESTRING', srid=4326), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc))
 
-    stops = relationship("Stop", back_populates="route")
+    stops = relationship("Stop", back_populates="route", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index('idx_routes_geom_gist', 'geom', postgresql_using='gist'),
@@ -38,13 +59,17 @@ class Stop(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
-    route_id = Column(Integer, ForeignKey("routes.id"))
+    route_id = Column(Integer, ForeignKey("routes.id"), index=True, nullable=True)
     geom = Column(Geometry(geometry_type='POINT', srid=4326), nullable=False)
+    # DB7: Columnas desnormalizadas para evitar ST_Y/ST_X en consultas frecuentes
+    lat = Column(Float, nullable=True)
+    lon = Column(Float, nullable=True)
 
     route = relationship("Route", back_populates="stops")
 
     __table_args__ = (
         Index('idx_stops_geom_gist', 'geom', postgresql_using='gist'),
+        Index('idx_stops_route_id', 'route_id'),
     )
 
 class BusPosition(Base):
@@ -61,4 +86,7 @@ class BusPosition(Base):
     __table_args__ = (
         Index('idx_bus_positions_bus_time', 'bus_id', 'recorded_at'),
         Index('idx_bus_positions_geom_gist', 'geom', postgresql_using='gist'),
+        Index('idx_bus_positions_route', 'route_id'),
+        Index('idx_bus_positions_recorded', 'recorded_at'),
+        CheckConstraint('speed >= 0', name='ck_speed_non_negative'),
     )
