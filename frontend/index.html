@@ -17,6 +17,10 @@
     <meta name="apple-mobile-web-app-title" content="OptiBus">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
+    
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -42,7 +46,7 @@
             <div id="search-results" class="search-results-dropdown"></div>
         </div>
         <!-- Planificador de viaje -->
-        <div id="route-planner" style="flex-shrink:0;padding:4px 8px;border-bottom:1px solid var(--border);display:none">
+        <div id="route-planner" style="flex-shrink:0;padding:4px 8px;border-bottom:1px solid var(--border);">
             <div style="display:flex;gap:4px;margin-bottom:4px">
                 <input type="text" id="plan-from" placeholder="Origen…" autocomplete="off" style="flex:1;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-panel);color:var(--text)">
                 <input type="text" id="plan-to" placeholder="Destino…" autocomplete="off" style="flex:1;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-panel);color:var(--text)">

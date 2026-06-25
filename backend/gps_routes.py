@@ -17,8 +17,9 @@ from database import get_db
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
-from sqlalchemy import and_, desc, func, select, text
+from sqlalchemy import and_, cast, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from geoalchemy2.types import Geography
 from ws_manager import ConnectionManager
 
 logger = logging.getLogger("optibus-gps-routes")
@@ -260,13 +261,14 @@ async def check_geofence(
             models.Route.id,
             models.Route.name,
             func.ST_Distance(
-                models.Route.geom, func.ST_GeomFromText(point, 4326)
+                cast(models.Route.geom, Geography),
+                cast(func.ST_GeomFromText(point, 4326), Geography),
             ).label("distance"),
         )
         .where(
             func.ST_DWithin(
-                models.Route.geom,
-                func.ST_GeomFromText(point, 4326),
+                cast(models.Route.geom, Geography),
+                cast(func.ST_GeomFromText(point, 4326), Geography),
                 max_distance_meters,
             )
         )

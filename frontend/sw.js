@@ -1,6 +1,6 @@
 // OptiBus Service Worker - Estrategia Cache First solo para assets propios
 // CORRECCIÓN: Versionado estático (sin Date.now()) para evitar regeneración infinita
-const CACHE_VERSION = 'v2.0.0';
+const CACHE_VERSION = 'v2.1.0';
 const CACHE_NAME = `optibus-pwa-${CACHE_VERSION}`;
 const ASSETS_TO_CACHE = [
   '/',
@@ -96,14 +96,23 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(cacheFirstWithNetworkFallback(event.request));
 });
 
-// Estrategia Network First: intentar red, si falla usar cache
+// Estrategia Network First: intentar red, SIEMPRE refrescar cache si OK
 async function networkFirstWithCache(request) {
   try {
-    const networkResponse = await fetch(request);
+    const networkResponse = await fetch(request.clone());
     if (networkResponse && networkResponse.ok) {
+      // Reemplazar cache con la respuesta fresca
       const cache = await caches.open(CACHE_NAME);
-      cache.put(request, networkResponse.clone());
+      await cache.put(request, networkResponse.clone());
+      return networkResponse;
     }
+    // Si la red responde con error (4xx/5xx), buscar en cache
+    const cached = await caches.match(request);
+    if (cached) {
+      console.log('[SW] Red devolvió error, usando cache:', request.url);
+      return cached;
+    }
+    // Sin cache y con error de red → devolver el error original
     return networkResponse;
   } catch (error) {
     console.log('[SW] Sin red, buscando en cache:', request.url);

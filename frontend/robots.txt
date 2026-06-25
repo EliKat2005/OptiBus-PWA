@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /metrics
+Disallow: /api/
+
+# OptiBus PWA — DevSecOps v4.0
+# Los endpoints de API y admin están bloqueados para crawlers.
+# Solo el frontend estático es indexable.

@@ -237,9 +237,30 @@ async def websocket_endpoint(
 
                 # Reenviar posiciones de buses (desde el APK)
                 if data.get("type") == "bus_positions":
-                    for bus in data.get("buses", []):
-                        bus["source"] = "real"
-                    await ws_manager.broadcast(json.dumps(data))
+                    buses = data.get("buses", [])
+                    if not isinstance(buses, list):
+                        logger.warning(f"WS: buses no es lista de {client_id}")
+                        continue
+                    # Validar cada bus
+                    validated_buses = []
+                    for bus in buses:
+                        if not isinstance(bus, dict):
+                            continue
+                        bid = bus.get("id")
+                        lat = bus.get("lat")
+                        lon = bus.get("lon")
+                        if not isinstance(bid, str) or not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+                            logger.warning(f"WS: bus inválido de {client_id}: {bus}")
+                            continue
+                        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+                            continue
+                        bus["source"] = bus.get("source", "real")
+                        validated_buses.append(bus)
+                    if validated_buses:
+                        await ws_manager.broadcast(json.dumps({
+                            "type": "bus_positions",
+                            "buses": validated_buses
+                        }))
                 else:
                     # Mensaje desconocido, ignorar silenciosamente
                     logger.debug(f"Mensaje WS desconocido: {data.get('type')}")

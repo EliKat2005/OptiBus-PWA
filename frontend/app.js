@@ -426,6 +426,8 @@ async function findNearbyStops() {
             alert('Coordenadas GPS inválidas.'); if (gpsBtn) gpsBtn.classList.remove('searching'); return;
         }
         map.setView([userLat, userLon], 16, { animate: true });
+        // Limpiar marcadores previos de búsquedas GPS anteriores
+        hideAllStopMarkers();
         L.marker([userLat, userLon], {
             icon: L.divIcon({ className: 'my-location-icon', html: '<div class="my-location-dot"></div>', iconSize: [20, 20], iconAnchor: [10, 10] })
         }).addTo(map).bindPopup('<b>📍 Estás aquí</b>').openPopup();

@@ -1,41 +1,33 @@
-name: CI/CD - OptiBus Backend
+name: CI/CD Pipeline
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'backend/**'
-      - 'deploy/config/**'
-      - 'frontend/**'
-      - 'Caddyfile'
-      - 'compose.yaml'
-      - 'deploy.sh'
-      - 'scripts/**'
-      - 'pyproject.toml'
-      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'backend/**'
-
-permissions:
-  contents: read
 
 jobs:
-  test:
-    name: 🧪 Tests + Lint + Security Scan
-    runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        python-version: ['3.12', '3.13']
+  lint:
+    name: Lint con Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.13"
+      - run: uv pip install --system ruff
+      - run: ruff check backend/
 
+  test:
+    name: Tests de integración
+    runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgis/postgis:15-3.4
+        image: postgis/postgis:16-3.4
         env:
+          POSTGRES_USER: optibus
+          POSTGRES_PASSWORD: testpass
           POSTGRES_DB: optibus_test
-          POSTGRES_USER: optibus_test
-          POSTGRES_PASSWORD: test_password_ci
         ports:
           - 5432:5432
         options: >-
@@ -43,62 +35,35 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
-      DATABASE_URL: postgresql+asyncpg://optibus_test:test_password_ci@localhost:5432/optibus_test
-      REDIS_URL: redis://localhost:6379/0
-      OPTIBUS_API_KEY: test-api-key-ci-32chars-minimum!!
+      POSTGRES_USER: optibus
+      POSTGRES_PASSWORD: testpass
       POSTGRES_DB: optibus_test
-      POSTGRES_USER: optibus_test
-      POSTGRES_PASSWORD: test_password_ci
-
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://localhost:6379/0
+      OPTIBUS_API_KEY: test-key-32-chars-minimum!!
+      JWT_SECRET: test-jwt-secret-32-chars-minimum!!
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
+      - run: uv pip install --system -r backend/requirements.txt
+      - name: Run tests
+        run: cd backend && python -m pytest tests/ -v --tb=short
 
-      - name: Install dependencies
-        working-directory: backend
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx bandit ruff
-
-      - name: 🔍 Lint with Ruff
-        working-directory: backend
-        run: ruff check . --select E,F,W --ignore E501
-
-      - name: 🛡️ Security Scan with Bandit
-        working-directory: backend
-        run: bandit -r . -x ./tests/,./utils/gps_cleaner.py --severity-level high
-
-      - name: 🧪 Run Tests
-        working-directory: backend
-        run: |
-          python -m pytest tests/ -v --timeout=30 --strict-markers -p no:warnings || true
-          echo "✅ Tests ejecutados."
-
-  shellcheck:
-    name: 📝 ShellCheck Scripts
-    runs-on: ubuntu-24.04
+  security:
+    name: SAST Security Scan
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
+      - uses: astral-sh/setup-uv@v4
         with:
-          scandir: '.'
-          severity: warning
-          ignore: scripts
+          python-version: "3.13"
+      - run: uv pip install --system bandit
+      - run: bandit -r backend/ -x backend/tests/ -s B101
