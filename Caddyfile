@@ -12,8 +12,9 @@
         # inline del HTML se movieron a app.js para eliminar unsafe-inline en script-src.
         Content-Security-Policy "default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org https://cdn-icons-png.flaticon.com https://cdn.iconscout.com https://unpkg.com; connect-src 'self' ws: wss: https://*.tile.openstreetmap.org https://unpkg.com; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
         # Cross-Origin isolation headers
-        Cross-Origin-Opener-Policy "same-origin"
-        Cross-Origin-Embedder-Policy "require-corp"
+        # NOTA: COEP "require-corp" bloquea tiles de mapas y CDNs sin CORP.
+        # Se usa COOP solo, suficiente para aislamiento de contexto de navegación.
+        Cross-Origin-Opener-Policy "same-origin-allow-popups"
         # Ocultar versión del servidor
         -Server
     }
