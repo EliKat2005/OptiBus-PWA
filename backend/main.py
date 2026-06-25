@@ -78,8 +78,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"DB no disponible (intento {attempt}/{max_retries}): {type(e).__name__}")
             if attempt >= max_retries:
-                logger.error("No se pudo conectar a la DB después de varios intentos.")
-                raise
+                logger.critical("No se pudo conectar a la DB después de varios intentos. La API arranca en modo degradado.")
+                # NO hacer raise — dejar que la app viva y reporte error en /health
             await asyncio.sleep(3)
 
     await ws_manager.start()
