@@ -167,7 +167,7 @@ async def get_nearby_stops(
             models.Stop.id,
             models.Stop.name,
             func.ST_AsGeoJSON(models.Stop.geom).label("geojson"),
-            func.ST_DistanceSphere(
+            func.ST_Distance(
                 cast(models.Stop.geom, Geography),
                 cast(func.ST_GeomFromText(point, 4326), Geography),
             ).label("distance"),
