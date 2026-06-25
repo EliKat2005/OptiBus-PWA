@@ -56,22 +56,34 @@ else:
     JWT_SECRET = hashlib.sha256(_raw.encode()).hexdigest()
 
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+
+def _int_env(key: str, default: int) -> int:
+    """Helper seguro: parsea int de env, fallback a default si el valor es basura."""
+    raw = os.getenv(key, "")
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        logger.warning(f"Valor inválido para {key}='{raw}', usando default={default}")
+        return default
+
+ACCESS_TOKEN_EXPIRE_MINUTES = _int_env("ACCESS_TOKEN_EXPIRE_MINUTES", 15)
+REFRESH_TOKEN_EXPIRE_DAYS = _int_env("REFRESH_TOKEN_EXPIRE_DAYS", 30)
 
 # ── Bus Simulator ──
 ENABLE_BUS_SIMULATOR = os.getenv("ENABLE_BUS_SIMULATOR", "false").lower() == "true"
 
 # ── WebSocket ──
-WS_MAX_MESSAGES_PER_MINUTE = int(os.getenv("WS_MAX_MESSAGES_PER_MINUTE", "60"))
-WS_TIMEOUT_SECONDS = int(os.getenv("WS_TIMEOUT_SECONDS", "120"))
+WS_MAX_MESSAGES_PER_MINUTE = _int_env("WS_MAX_MESSAGES_PER_MINUTE", 60)
+WS_TIMEOUT_SECONDS = _int_env("WS_TIMEOUT_SECONDS", 120)
 
 # ── Rate Limiting ──
-RL_MAX_REQUESTS = int(os.getenv("RL_MAX_REQUESTS", "30"))
-RL_WINDOW_SECONDS = int(os.getenv("RL_WINDOW_SECONDS", "60"))
+RL_MAX_REQUESTS = _int_env("RL_MAX_REQUESTS", 30)
+RL_WINDOW_SECONDS = _int_env("RL_WINDOW_SECONDS", 60)
 
 # ── GPS Upload ──
-MAX_GPX_UPLOAD_MB = int(os.getenv("MAX_GPX_UPLOAD_MB", "10"))
+MAX_GPX_UPLOAD_MB = _int_env("MAX_GPX_UPLOAD_MB", 10)
 
 # ── Trusted Proxy IPs ──
 TRUSTED_PROXY_IPS = os.getenv(
