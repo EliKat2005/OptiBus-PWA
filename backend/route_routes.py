@@ -18,8 +18,8 @@ from auth_utils import verify_api_key, verify_optional_auth, require_admin
 from config import (
     BUS_ID_PATTERN,
     MAX_GPX_UPLOAD_MB,
-    RECORDED_ROUTES_DIR,
     SAFE_ROUTE_NAME_PATTERN,
+    get_recorded_routes_dir,
 )
 from database import get_db
 from fastapi import (
@@ -288,12 +288,13 @@ async def upload_recorded_route(
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     base_filename = f"{safe_route_name.replace(' ', '_')}_{timestamp}"
 
-    gpx_path = RECORDED_ROUTES_DIR / f"{base_filename}.gpx"
+    recorded_dir = get_recorded_routes_dir()
+    gpx_path = recorded_dir / f"{base_filename}.gpx"
     async with aiofiles.open(gpx_path, "wb") as f:
         await f.write(gpx_content)
 
     total_points = len(cleaned_points)
-    meta_path = RECORDED_ROUTES_DIR / f"{base_filename}_meta.json"
+    meta_path = recorded_dir / f"{base_filename}_meta.json"
     meta = {
         "route_name": safe_route_name,
         "company": company,

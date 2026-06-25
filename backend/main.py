@@ -15,7 +15,8 @@ from config import (
     API_KEY_ENABLED,
     APP_VERSION,
     ENABLE_BUS_SIMULATOR,
-    LOG_LEVEL,
+    ensure_directories,
+    validate_config,
 )
 from database import Base, engine
 from fastapi import (
@@ -49,10 +50,7 @@ from simulator import start_simulator, stop_simulator
 from ws_manager import ConnectionManager
 
 # ── Logging ──
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+# logging ya fue configurado por config.py con force=True
 logger = logging.getLogger("optibus-api")
 
 # ── Managers globales ──
@@ -64,9 +62,25 @@ rate_limiter = DistributedRateLimiter()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan: startup y shutdown de la aplicación."""
-    # Startup
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Startup — validar config y crear directorios PRIMERO
+    validate_config()
+    ensure_directories()
+    logger.info(f"OptiBus API v{APP_VERSION} iniciando...")
+
+    # Esperar a que la DB esté lista (reintentos)
+    max_retries = 10
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("DB conectada y tablas listas")
+            break
+        except Exception as e:
+            logger.warning(f"DB no disponible (intento {attempt}/{max_retries}): {type(e).__name__}")
+            if attempt >= max_retries:
+                logger.error("No se pudo conectar a la DB después de varios intentos.")
+                raise
+            await asyncio.sleep(3)
 
     await ws_manager.start()
     logger.info(f"OptiBus API v{APP_VERSION} iniciada")

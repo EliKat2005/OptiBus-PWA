@@ -80,9 +80,9 @@ services:
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-30}
     depends_on:
       db:
-        condition: service_started
+        condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./backend/seed_data:/app/backend/seed_data:z
     # Dev: Para desarrollo local con hot-reload, usar compose.override.yaml con volumes: ./backend:/app:Z
