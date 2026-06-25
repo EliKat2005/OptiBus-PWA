@@ -34,8 +34,9 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from geoalchemy2.types import Geography
 from utils.gps_cleaner import clean_gps_track
 from ws_manager import ConnectionManager
 
