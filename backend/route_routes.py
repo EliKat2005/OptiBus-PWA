@@ -143,6 +143,42 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
     return response
 
 
+@router.get("/stops/search")
+async def search_stops(
+    q: str = Query(..., min_length=1, max_length=100),
+    max_results: int = Query(default=8, le=20),
+    db: AsyncSession = Depends(get_db),
+):
+    """Búsqueda de paradas por nombre parcial (autocompletado)."""
+    search_term = f"%{q.strip()}%"
+    result = await db.execute(
+        select(
+            models.Stop.id,
+            models.Stop.name,
+            models.Stop.route_id,
+            models.Route.name.label("route_name"),
+            func.coalesce(models.Stop.lat, func.ST_Y(models.Stop.geom)).label("lat"),
+            func.coalesce(models.Stop.lon, func.ST_X(models.Stop.geom)).label("lon"),
+        )
+        .join(models.Route, models.Stop.route_id == models.Route.id, isouter=True)
+        .where(models.Stop.name.ilike(search_term))
+        .order_by(models.Stop.name)
+        .limit(max_results)
+    )
+    stops = [
+        {
+            "id": r.id,
+            "name": r.name,
+            "route_id": r.route_id,
+            "route_name": r.route_name or "",
+            "lat": round(r.lat, 7) if r.lat else None,
+            "lon": round(r.lon, 7) if r.lon else None,
+        }
+        for r in result
+    ]
+    return {"query": q, "results": stops}
+
+
 @router.get("/stops/nearby")
 async def get_nearby_stops(
     lat: float,

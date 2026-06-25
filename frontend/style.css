@@ -346,6 +346,28 @@ body, html {
 }
 .leaflet-control-zoom a:hover { background: var(--bg-panel-hover) !important; }
 
+/* ── Planificador de viaje: sugerencias ── */
+.plan-suggestions {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 2100;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    max-height: 180px; overflow-y: auto;
+    display: none;
+}
+.plan-suggestions.show { display: block; }
+.plan-suggestion-item {
+    padding: 7px 10px; cursor: pointer; font-size: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    transition: background var(--transition);
+}
+.plan-suggestion-item:hover { background: var(--bg-panel-hover); }
+.plan-suggestion-item:last-child { border-bottom: none; }
+.plan-suggestion-name { font-weight: 600; color: var(--text); flex: 1; }
+.plan-suggestion-route { font-size: 10px; color: var(--primary); background: rgba(37,99,235,0.1); padding: 1px 6px; border-radius: 4px; flex-shrink: 0; margin-left: 6px; }
+
 /* ── Responsive (móvil) ── */
 @media (max-width: 640px) {
     #side-panel {

@@ -665,22 +665,128 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initSearch();
     initDarkMode();
+    initPlanAutocomplete();
 });
 
-// ── Planificador de viaje (cómo llegar de A a B) ──
+// ── Planificador de viaje con autocompletado ──
+const planState = {
+    fromStopId: null,
+    toStopId: null,
+    debounceTimers: { from: null, to: null },
+};
+
+async function searchStops(query) {
+    if (!query || query.length < 2) return [];
+    try {
+        const response = await fetch(`${API_URL}/api/stops/search?q=${encodeURIComponent(query)}`);
+        if (!response.ok) return [];
+        const data = await response.json();
+        return data.results || [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function renderSuggestions(suggestions, inputEl, suggestionsEl, field) {
+    if (!suggestionsEl) return;
+    if (suggestions.length === 0) {
+        suggestionsEl.innerHTML = '';
+        suggestionsEl.classList.remove('show');
+        return;
+    }
+    suggestionsEl.innerHTML = suggestions.map(s => {
+        const routeLabel = s.route_name ? `<span class="plan-suggestion-route">${escapeHtml(s.route_name)}</span>` : '';
+        return `<div class="plan-suggestion-item" data-stop-id="${s.id}">
+            <span class="plan-suggestion-name">${escapeHtml(s.name)}</span>
+            ${routeLabel}
+        </div>`;
+    }).join('');
+    suggestionsEl.classList.add('show');
+
+    // Click handler
+    suggestionsEl.querySelectorAll('.plan-suggestion-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const stopId = parseInt(item.dataset.stopId);
+            const stopName = item.querySelector('.plan-suggestion-name').textContent;
+            inputEl.value = stopName;
+            if (field === 'from') {
+                planState.fromStopId = stopId;
+            } else {
+                planState.toStopId = stopId;
+            }
+            planState[`${field}StopId`] = stopId;
+            suggestionsEl.innerHTML = '';
+            suggestionsEl.classList.remove('show');
+        });
+    });
+}
+
+function initPlanAutocomplete() {
+    const fromInput = document.getElementById('plan-from');
+    const toInput = document.getElementById('plan-to');
+    const fromSuggestions = document.getElementById('plan-from-suggestions');
+    const toSuggestions = document.getElementById('plan-to-suggestions');
+
+    function setupAutocomplete(inputEl, suggestionsEl, field) {
+        if (!inputEl || !suggestionsEl) return;
+
+        inputEl.addEventListener('input', () => {
+            // Resetear ID al escribir manualmente
+            planState[`${field}StopId`] = null;
+            const query = inputEl.value.trim();
+            if (query.length < 2) {
+                suggestionsEl.innerHTML = '';
+                suggestionsEl.classList.remove('show');
+                return;
+            }
+            // Debounce 300ms
+            if (planState.debounceTimers[field]) clearTimeout(planState.debounceTimers[field]);
+            planState.debounceTimers[field] = setTimeout(async () => {
+                const suggestions = await searchStops(query);
+                renderSuggestions(suggestions, inputEl, suggestionsEl, field);
+            }, 300);
+        });
+
+        // Cerrar dropdown si se hace click fuera
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest(`#plan-${field}`) && !e.target.closest(`#plan-${field}-suggestions`)) {
+                suggestionsEl.classList.remove('show');
+            }
+        });
+
+        // Teclado: Enter cierra sugerencias
+        inputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                suggestionsEl.classList.remove('show');
+            }
+        });
+    }
+
+    setupAutocomplete(fromInput, fromSuggestions, 'from');
+    setupAutocomplete(toInput, toSuggestions, 'to');
+}
+
 async function planRoute() {
     const fromInput = document.getElementById('plan-from');
     const toInput = document.getElementById('plan-to');
     const resultEl = document.getElementById('plan-result');
-    const plannerEl = document.getElementById('route-planner');
 
     if (!fromInput || !toInput || !resultEl) return;
 
+    const fromId = planState.fromStopId;
+    const toId = planState.toStopId;
     const fromName = fromInput.value.trim();
     const toName = toInput.value.trim();
 
     if (!fromName || !toName) {
         resultEl.textContent = 'Escribe origen y destino';
+        resultEl.style.color = 'var(--text-muted)';
+        return;
+    }
+
+    if (!fromId || !toId) {
+        resultEl.textContent = 'Selecciona una parada de las sugerencias';
+        resultEl.style.color = '#f59e0b';
         return;
     }
 
@@ -691,7 +797,7 @@ async function planRoute() {
         const response = await fetch(`${API_URL}/api/routes/plan`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from_name: fromName, to_name: toName })
+            body: JSON.stringify({ from_stop_id: fromId, to_stop_id: toId })
         });
 
         if (!response.ok) {
@@ -705,10 +811,9 @@ async function planRoute() {
         resultEl.textContent = data.message;
         resultEl.style.color = '#10b981';
 
-        // Destacar la primera ruta del plan en el mapa
         if (data.plan && data.plan.length > 0) {
             const firstRoute = data.plan[0];
-            const routeId = firstRoute.routeId || firstRoute.route_id; // soporta camelCase y snake_case
+            const routeId = firstRoute.routeId || firstRoute.route_id;
             if (routeId != null) showRouteDetail(routeId);
         }
     } catch (e) {
