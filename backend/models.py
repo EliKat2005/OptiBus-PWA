@@ -39,7 +39,7 @@ class Driver(Base):
     __tablename__ = "drivers"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String(255), unique=True, index=True, nullable=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=True)
     name = Column(String(100), nullable=False)
     bus_id = Column(String(50), nullable=False, default="Bus-1")

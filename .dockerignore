@@ -1,37 +1,75 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-.venv/
+# ==========================================
+# DevSecOps v4.0: Docker Ignore para build seguro
+# ==========================================
 
-# Secrets & Environment
+# ── Entorno y Secretos ──
 .env
 .env.*
-*.pem
 *.key
+*.pem
+*.crt
 secrets/
 
-# Data & Backups
-backend/seed_data/
-backend/data/
-.deploy_backups/
-db_data/
+# ── Git ──
+.git
+.gitignore
+.gitattributes
+.github
+.gitlab-ci.yml
 
-# Dev
-.git/
-.idea/
+# ── Documentación ──
+docs/
+*.md
+README*
+
+# ── Tests ──
+**/tests/
+**/test_*
+**/*_test.*
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Desarrollo ──
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.ruff_cache/
+.mypy_cache/
 .vscode/
+.idea/
 *.swp
+*.swo
+*~
 
-# Mobile
+# ── Scripts de despliegue (no necesarios en imagen) ──
+scripts/
+deploy.sh
+Caddyfile
+compose.yaml
+compose.override.yaml
+
+# ── Frontend (servido por Caddy, no por API) ──
+frontend/
+
+# ── Mobile Driver (APK, no relevante en backend) ──
 mobile-driver/
 
-# CI/CD
-.github/
+# ── Config de deploy ──
+deploy/
 
-# Docs
-docs/
+# ── Datos locales y backups ──
+*.tar.gz
+*.zip
+backups/
+.deploy_backups/
+backend/data/
 
-# Dependencies
-uv.lock
+# ── OS junk ──
+.DS_Store
+Thumbs.db

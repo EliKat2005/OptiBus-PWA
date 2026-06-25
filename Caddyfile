@@ -1,16 +1,19 @@
 {$DOMAIN:localhost} {
-    # DevSecOps: Implementación de cabeceras de seguridad fundamentales
+    # DevSecOps v4.0: Cabeceras de seguridad reforzadas
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
-        Referrer-Policy "no-referrer-when-downgrade"
-        Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(self), payment=()"
         # CSP reforzado: unsafe-inline solo para estilos de Leaflet (necesario para tiles)
         # La directiva unsafe-inline se mantiene en style-src porque Leaflet
         # inyecta estilos dinámicamente para posicionar tiles. Los scripts
         # inline del HTML se movieron a app.js para eliminar unsafe-inline en script-src.
-        Content-Security-Policy "default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org https://cdn-icons-png.flaticon.com https://cdn.iconscout.com https://unpkg.com; connect-src 'self' ws: wss: https://*.tile.openstreetmap.org https://unpkg.com; font-src 'self'; worker-src 'self'; manifest-src 'self';"
+        Content-Security-Policy "default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org https://cdn-icons-png.flaticon.com https://cdn.iconscout.com https://unpkg.com; connect-src 'self' ws: wss: https://*.tile.openstreetmap.org https://unpkg.com; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+        # Cross-Origin isolation headers
+        Cross-Origin-Opener-Policy "same-origin"
+        Cross-Origin-Embedder-Policy "require-corp"
         # Ocultar versión del servidor
         -Server
     }
