@@ -146,7 +146,7 @@ async def get_routes(db: AsyncSession = Depends(get_db)):
 async def get_nearby_stops(
     lat: float,
     lon: float,
-    radius_meters: float = 500.0,
+    radius_meters: float = 300.0,
     max_results: int = Query(default=50, le=200),
     db: AsyncSession = Depends(get_db),
 ):
