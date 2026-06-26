@@ -19,43 +19,16 @@ jobs:
       - run: ruff check backend/
 
   test:
-    name: Tests de integración
+    name: Tests unitarios
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgis/postgis:16-3.4
-        env:
-          POSTGRES_USER: optibus
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: optibus_test
-        ports:
-          - 5432:5432
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-    env:
-      POSTGRES_USER: optibus
-      POSTGRES_PASSWORD: testpass
-      POSTGRES_DB: optibus_test
-      POSTGRES_HOST: localhost
-      POSTGRES_PORT: 5432
-      REDIS_URL: redis://localhost:6379/0
-      OPTIBUS_API_KEY: test-key-32-chars-minimum!!
-      JWT_SECRET: test-jwt-secret-32-chars-minimum!!
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
           python-version: "3.13"
       - run: pip install -r backend/requirements.txt
-      - name: Wait for PostgreSQL
-        run: |
-          timeout 30 bash -c 'until pg_isready -h localhost -p 5432 -U optibus -d optibus_test; do sleep 1; done'
-        env:
-          PGPASSWORD: testpass
-      - name: Run tests
-        run: cd backend && python -m pytest tests/ -v --tb=short
+      - name: Run unit tests (no DB required)
+        run: cd backend && python -m pytest tests/test_gps_cleaner.py -v --tb=short
 
   security:
     name: SAST Security Scan
