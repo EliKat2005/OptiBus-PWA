@@ -1,6 +1,5 @@
-"""Fixtures de pytest con base de datos real para tests de integración v4.0."""
+"""Fixtures de pytest con base de datos real para tests de integración v4.1."""
 
-import asyncio
 import os
 
 import pytest
@@ -8,11 +7,11 @@ from httpx import ASGITransport, AsyncClient
 
 # Forzar variables de entorno de test ANTES de importar la app
 os.environ.setdefault("POSTGRES_DB", "optibus_test")
-os.environ.setdefault("POSTGRES_USER", "optibus_test")
+os.environ.setdefault("POSTGRES_USER", "optibus")
 os.environ.setdefault("POSTGRES_PASSWORD", "testpass")
 os.environ.setdefault("POSTGRES_HOST", "localhost")
-os.environ.setdefault("POSTGRES_PORT", "5433")
-os.environ.setdefault("REDIS_URL", "redis://localhost:6380/0")
+os.environ.setdefault("POSTGRES_PORT", "5432")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("OPTIBUS_API_KEY", "test-key-32-chars-minimum!!")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-32-chars-minimum!!")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:80,http://localhost")
@@ -22,16 +21,15 @@ from main import app
 
 
 @pytest.fixture(scope="session")
-def event_loop():
-    """Crear un único event loop para toda la sesión de tests."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+def event_loop_policy():
+    """Usar la política de event loop por defecto para evitar conflictos."""
+    import asyncio
+    return asyncio.DefaultEventLoopPolicy()
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 async def setup_db():
-    """Crear tablas antes de cada test y limpiarlas después."""
+    """Crear tablas antes de los tests del módulo y limpiarlas después."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
