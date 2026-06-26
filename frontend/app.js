@@ -694,26 +694,26 @@ function renderSuggestions(suggestions, inputEl, suggestionsEl, field) {
         suggestionsEl.classList.remove('show');
         return;
     }
+    // Reutilizar mismo estilo que el buscador principal
     suggestionsEl.innerHTML = suggestions.map(s => {
-        const routeLabel = s.route_name ? `<span class="plan-suggestion-route">${escapeHtml(s.route_name)}</span>` : '';
-        return `<div class="plan-suggestion-item" data-stop-id="${s.id}">
-            <span class="plan-suggestion-name">${escapeHtml(s.name)}</span>
-            ${routeLabel}
+        const icon = '🚏';
+        const sub = s.route_name ? `<span class="chip-dot" style="background:var(--primary)"></span>${escapeHtml(s.route_name)}` : 'Sin ruta asignada';
+        return `<div class="search-result-item" data-stop-id="${s.id}" style="font-size:11px;padding:6px 10px">
+            <span class="result-icon" style="font-size:14px">${icon}</span>
+            <div class="result-info">
+                <span class="result-name" style="font-size:12px">${escapeHtml(s.name)}</span>
+                <span class="result-sub" style="font-size:10px">${sub}</span>
+            </div>
         </div>`;
     }).join('');
     suggestionsEl.classList.add('show');
 
     // Click handler
-    suggestionsEl.querySelectorAll('.plan-suggestion-item').forEach(item => {
+    suggestionsEl.querySelectorAll('.search-result-item').forEach(item => {
         item.addEventListener('click', () => {
             const stopId = parseInt(item.dataset.stopId);
-            const stopName = item.querySelector('.plan-suggestion-name').textContent;
+            const stopName = item.querySelector('.result-name').textContent;
             inputEl.value = stopName;
-            if (field === 'from') {
-                planState.fromStopId = stopId;
-            } else {
-                planState.toStopId = stopId;
-            }
             planState[`${field}StopId`] = stopId;
             suggestionsEl.innerHTML = '';
             suggestionsEl.classList.remove('show');

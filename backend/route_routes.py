@@ -453,8 +453,8 @@ async def plan_route(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Planificador de viajes entre dos paradas.
-    DevSecOps: Ahora requiere autenticación (opcional si API Key no está configurada).
+    Planificador de viajes profesional con BFS multi-transbordo (hasta 2 transbordos).
+    DevSecOps: Autenticación opcional.
     """
     body = await request.json()
     from_id = body.get("from_stop_id")
@@ -462,12 +462,16 @@ async def plan_route(
     from_name = body.get("from_name")
     to_name = body.get("to_name")
 
+    # ── Resolver nombres a IDs si es necesario ──
     if (from_id is None and from_name) or (to_id is None and to_name):
+        names_to_search = []
+        if from_name and from_id is None:
+            names_to_search.append(from_name)
+        if to_name and to_id is None:
+            names_to_search.append(to_name)
         result = await db.execute(
             select(models.Stop.id, models.Stop.name).where(
-                models.Stop.name.in_(
-                    [from_name, to_name] if from_name and to_name else []
-                )
+                models.Stop.name.in_(names_to_search) if names_to_search else True
             )
         )
         stops_by_name = {r.name: r.id for r in result}
@@ -479,130 +483,239 @@ async def plan_route(
     if from_id is None or to_id is None:
         return JSONResponse(
             status_code=400,
-            content={
-                "detail": "from_stop_id y to_stop_id requeridos (o nombres válidos)"
-            },
+            content={"detail": "Selecciona una parada de origen y una de destino de las sugerencias."},
         )
 
     if from_id == to_id:
         return JSONResponse(
             status_code=400,
-            content={"detail": "Origen y destino son la misma parada"},
+            content={"detail": "Origen y destino son la misma parada."},
         )
 
-    from_result = await db.execute(
+    # ── Cargar TODAS las rutas y sus paradas en una sola consulta ──
+    all_stops_result = await db.execute(
         select(
+            models.Stop.id,
+            models.Stop.name,
             models.Stop.route_id,
             models.Route.name.label("route_name"),
-            models.Stop.id.label("stop_id"),
-            models.Stop.name.label("stop_name"),
         )
         .join(models.Route, models.Stop.route_id == models.Route.id)
-        .where(models.Stop.id.in_([from_id, to_id]))
+        .where(models.Stop.route_id.isnot(None))
+        .order_by(models.Stop.id)
     )
-    stop_routes: dict = {}
-    for r in from_result:
+    # route_to_stops: {route_id: {stop_id: stop_name, ...}}
+    # stop_to_routes: {stop_id: {route_id: route_name, ...}}
+    route_to_stops: dict = {}
+    stop_to_routes: dict = {}
+    route_names: dict = {}
+    stop_names: dict = {}
+    for r in all_stops_result:
         rid = r.route_id
-        if rid not in stop_routes:
-            stop_routes[rid] = {"route_name": r.route_name, "stops": {}}
-        stop_routes[rid]["stops"][r.stop_id] = r.stop_name
+        sid = r.id
+        if rid not in route_to_stops:
+            route_to_stops[rid] = {}
+            route_names[rid] = r.route_name
+        route_to_stops[rid][sid] = r.name
+        if sid not in stop_to_routes:
+            stop_to_routes[sid] = {}
+            stop_names[sid] = r.name
+        stop_to_routes[sid][rid] = r.route_name
 
-    # Buscar ruta directa
-    direct_route = None
-    for route_id, data in stop_routes.items():
-        if from_id in data["stops"] and to_id in data["stops"]:
-            stops_order = await db.execute(
-                select(models.Stop.id)
-                .where(models.Stop.route_id == route_id)
-                .order_by(models.Stop.id)
-            )
-            ordered = [s.id for s in stops_order]
-            if from_id in ordered and to_id in ordered:
-                pos_from = ordered.index(from_id)
-                pos_to = ordered.index(to_id)
-                if direct_route is None or abs(pos_to - pos_from) < direct_route.get(
-                    "distance", 9999
-                ):
-                    direct_route = {
-                        "route_id": route_id,
-                        "route_name": data["route_name"],
-                        "board_stop": data["stops"][from_id],
-                        "alight_stop": data["stops"][to_id],
-                        "stops_count": abs(pos_to - pos_from),
-                        "direction": "forward" if pos_to > pos_from else "backward",
-                    }
-
-    if direct_route:
-        return {
-            "type": "direct",
-            "plan": [direct_route],
-            "total_stops": direct_route["stops_count"],
-            "message": f"Toma la ruta '{direct_route['route_name']}' en '{direct_route['board_stop']}' y bájate en '{direct_route['alight_stop']}' ({direct_route['stops_count']} paradas)",
-        }
-
-    # Buscar transbordo
-    from_routes = [
-        rid for rid, data in stop_routes.items() if from_id in data["stops"]
-    ]
-    to_routes = [
-        rid for rid, data in stop_routes.items() if to_id in data["stops"]
-    ]
-
-    if not from_routes or not to_routes:
+    if not route_to_stops:
         return JSONResponse(
             status_code=404,
-            content={"detail": "No se encontraron rutas para estas paradas"},
+            content={"detail": "No hay rutas configuradas en el sistema."},
         )
 
-    for fr in from_routes:
-        for tr in to_routes:
-            if fr == tr:
-                continue
-            fr_stops = await db.execute(
-                select(models.Stop.id, models.Stop.name).where(
-                    models.Stop.route_id == fr
-                )
-            )
-            fr_stop_set = {s.id: s.name for s in fr_stops}
-            tr_stops = await db.execute(
-                select(models.Stop.id, models.Stop.name).where(
-                    models.Stop.route_id == tr
-                )
-            )
-            tr_stop_set = {s.id: s.name for s in tr_stops}
+    # ── Búsqueda: Ruta directa ──
+    direct = _find_direct_route(from_id, to_id, route_to_stops, route_names, stop_names)
+    if direct:
+        return {
+            "type": "direct",
+            "plan": [direct],
+            "total_stops": direct["stops_count"],
+            "total_transfers": 0,
+            "message": f"🚌 Ruta directa: Toma '{direct['route_name']}' en '{direct['board_stop']}' y bájate en '{direct['alight_stop']}' ({direct['stops_count']} paradas).",
+        }
 
-            common = set(fr_stop_set.keys()) & set(tr_stop_set.keys())
-            if common:
-                transfer_stop_id = min(common)
-                return {
-                    "type": "transfer",
-                    "plan": [
-                        {
-                            "route_id": fr,
-                            "route_name": stop_routes[fr]["route_name"],
-                            "board_stop": stop_routes[fr]["stops"][from_id],
-                            "alight_stop": fr_stop_set[transfer_stop_id],
-                            "transfer": True,
-                        },
-                        {
-                            "route_id": tr,
-                            "route_name": stop_routes[tr]["route_name"],
-                            "board_stop": tr_stop_set[transfer_stop_id],
-                            "alight_stop": stop_routes[tr]["stops"][to_id],
-                            "transfer": False,
-                        },
-                    ],
-                    "total_transfers": 1,
-                    "transfer_stop": fr_stop_set[transfer_stop_id],
-                    "message": f"Toma '{stop_routes[fr]['route_name']}' en '{stop_routes[fr]['stops'][from_id]}', transborda en '{fr_stop_set[transfer_stop_id]}', y toma '{stop_routes[tr]['route_name']}' hasta '{stop_routes[tr]['stops'][to_id]}'",
-                }
+    # ── BFS para 1 o 2 transbordos ──
+    bfs_result = _bfs_find_route(
+        from_id, to_id, route_to_stops, stop_to_routes, route_names, stop_names, max_transfers=2
+    )
+    if bfs_result:
+        plan_steps = []
+        for step in bfs_result:
+            plan_steps.append(step)
+        message_parts = []
+        for i, step in enumerate(bfs_result):
+            if i == 0:
+                message_parts.append(f"Toma '{step['route_name']}' en '{step['board_stop']}'")
+            else:
+                message_parts.append(f"transborda a '{step['route_name']}' en '{step['board_stop']}'")
+            if i == len(bfs_result) - 1:
+                message_parts[-1] += f" y bájate en '{step['alight_stop']}'"
+            else:
+                message_parts[-1] += f" hasta '{step['alight_stop']}'"
+        return {
+            "type": "transfer",
+            "plan": bfs_result,
+            "total_transfers": len(bfs_result) - 1,
+            "message": " → ".join(message_parts) + ".",
+        }
 
+    # ── Sin ruta: sugerir alternativas ──
+    alternatives = await _find_alternatives(from_id, to_id, db)
     return JSONResponse(
         status_code=404,
         content={
-            "detail": "No se encontró conexión entre estas paradas (sin transbordo común)"
+            "detail": "No se encontró ruta entre estas paradas.",
+            "alternatives": alternatives,
         },
     )
+
+
+def _find_direct_route(
+    from_id: int, to_id: int,
+    route_to_stops: dict, route_names: dict, stop_names: dict
+) -> dict | None:
+    """Encuentra ruta directa si ambas paradas comparten alguna ruta."""
+    best = None
+    for rid, stops in route_to_stops.items():
+        if from_id in stops and to_id in stops:
+            ordered = list(stops.keys())
+            if from_id in ordered and to_id in ordered:
+                pos_from = ordered.index(from_id)
+                pos_to = ordered.index(to_id)
+                count = abs(pos_to - pos_from)
+                if best is None or count < best.get("stops_count", 9999):
+                    best = {
+                        "route_id": rid,
+                        "route_name": route_names[rid],
+                        "board_stop": stop_names.get(from_id, stops[from_id]),
+                        "alight_stop": stop_names.get(to_id, stops[to_id]),
+                        "stops_count": count,
+                        "direction": "forward" if pos_to > pos_from else "backward",
+                    }
+    return best
+
+
+def _bfs_find_route(
+    from_id: int, to_id: int,
+    route_to_stops: dict, stop_to_routes: dict,
+    route_names: dict, stop_names: dict,
+    max_transfers: int = 2
+) -> list[dict] | None:
+    """
+    BFS sobre el grafo de rutas. Cada estado es (stop_id, route_id, path).
+    max_transfers = número máximo de cambios de ruta.
+    """
+    from collections import deque
+
+    # Obtener rutas del origen
+    from_routes = list(stop_to_routes.get(from_id, {}).keys())
+    if not from_routes:
+        return None
+
+    # Cola BFS: (current_stop_id, current_route_id, transfers_count, path_steps)
+    queue = deque()
+    visited = set()
+
+    for rid in from_routes:
+        queue.append((from_id, rid, 0, []))
+        visited.add((from_id, rid))
+
+    while queue:
+        stop_id, route_id, transfers, path = queue.popleft()
+
+        # Si esta ruta contiene la parada destino
+        if to_id in route_to_stops.get(route_id, {}):
+            ordered = list(route_to_stops[route_id].keys())
+            if stop_id in ordered and to_id in ordered:
+                # Construir el plan final
+                final_path = list(path)
+                final_path.append({
+                    "route_id": route_id,
+                    "route_name": route_names[route_id],
+                    "board_stop": stop_names.get(stop_id, str(stop_id)),
+                    "alight_stop": stop_names.get(to_id, str(to_id)),
+                    "stops_count": abs(ordered.index(to_id) - ordered.index(stop_id)),
+                })
+                return final_path
+
+        # Si ya alcanzamos el máximo de transbordos, no expandir más
+        if transfers >= max_transfers:
+            continue
+
+        # Expandir: desde cada parada de esta ruta, cambiar a otras rutas
+        for next_stop_id in route_to_stops.get(route_id, {}):
+            for next_route_id in stop_to_routes.get(next_stop_id, {}):
+                if next_route_id == route_id:
+                    continue
+                state = (next_stop_id, next_route_id)
+                if state not in visited:
+                    visited.add(state)
+                    new_path = list(path)
+                    if new_path:
+                        # Actualizar el último paso con la parada de bajada
+                        new_path[-1]["alight_stop"] = stop_names.get(next_stop_id, str(next_stop_id))
+                    new_path.append({
+                        "route_id": next_route_id,
+                        "route_name": route_names[next_route_id],
+                        "board_stop": stop_names.get(next_stop_id, str(next_stop_id)),
+                        "alight_stop": "",  # Se completa después
+                        "stops_count": 0,
+                    })
+                    queue.append((next_stop_id, next_route_id, transfers + 1, new_path))
+
+    return None
+
+
+async def _find_alternatives(from_id: int, to_id: int, db: AsyncSession) -> list[dict]:
+    """Busca paradas alternativas cercanas al origen/destino."""
+    alternatives = []
+    for stop_id, label in [(from_id, "origen"), (to_id, "destino")]:
+        stop_result = await db.execute(
+            select(
+                func.coalesce(models.Stop.lat, func.ST_Y(models.Stop.geom)).label("lat"),
+                func.coalesce(models.Stop.lon, func.ST_X(models.Stop.geom)).label("lon"),
+            ).where(models.Stop.id == stop_id)
+        )
+        stop_row = stop_result.first()
+        if not stop_row or not stop_row.lat or not stop_row.lon:
+            continue
+        nearby = await db.execute(
+            select(
+                models.Stop.id,
+                models.Stop.name,
+                models.Route.name.label("route_name"),
+                func.ST_Distance(
+                    cast(models.Stop.geom, Geography),
+                    cast(func.ST_GeomFromText(f"SRID=4326;POINT({stop_row.lon} {stop_row.lat})", 4326), Geography),
+                ).label("distance"),
+            )
+            .join(models.Route, models.Stop.route_id == models.Route.id, isouter=True)
+            .where(
+                models.Stop.id != stop_id,
+                func.ST_DWithin(
+                    cast(models.Stop.geom, Geography),
+                    cast(func.ST_GeomFromText(f"SRID=4326;POINT({stop_row.lon} {stop_row.lat})", 4326), Geography),
+                    500,
+                ),
+            )
+            .order_by("distance")
+            .limit(5)
+        )
+        for n in nearby:
+            alternatives.append({
+                "type": f"cerca_de_{label}",
+                "original_stop_id": stop_id,
+                "alternative_stop_id": n.id,
+                "alternative_name": n.name,
+                "route_name": n.route_name or "",
+                "distance_m": round(n.distance, 1),
+            })
+    return alternatives
 
 
 @router.get("/simulator/status")
