@@ -4,6 +4,7 @@ Configuración centralizada con validación lazy para evitar crash al importar.
 """
 
 import hashlib
+import ipaddress
 import logging
 import os
 import re
@@ -144,7 +145,6 @@ def get_recorded_routes_dir():
 
 
 # ── Validación de IP en red privada (función pura, no depende de estado) ──
-import ipaddress
 
 
 def is_trusted_proxy(ip: str) -> bool:

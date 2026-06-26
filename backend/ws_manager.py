@@ -8,7 +8,6 @@ import asyncio
 import json
 import logging
 import time
-from collections import defaultdict
 
 from config import WS_MAX_MESSAGES_PER_MINUTE, WS_TIMEOUT_SECONDS
 from fastapi import WebSocket
@@ -91,7 +90,7 @@ class ConnectionManager:
             except asyncio.CancelledError:
                 pass
         async with self._lock:
-            for client_id, conn in list(self._connections.items()):
+            for _client_id, conn in list(self._connections.items()):
                 await conn.close(1001, "Server shutting down")
             self._connections.clear()
         logger.info("WebSocket Connection Manager detenido")

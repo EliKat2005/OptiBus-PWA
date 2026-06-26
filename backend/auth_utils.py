@@ -9,21 +9,18 @@ import hashlib
 import hmac as hmac_lib
 import json
 import logging
-import time
 from datetime import UTC, datetime
-from secrets import compare_digest, token_urlsafe
-
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from secrets import compare_digest
 
 from config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     API_KEY_ENABLED,
-    JWT_ALGORITHM,
     JWT_SECRET,
     OPTIBUS_API_KEY,
     REFRESH_TOKEN_EXPIRE_DAYS,
 )
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 logger = logging.getLogger("optibus-auth")
 
@@ -197,11 +194,11 @@ async def verify_api_key(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token expirado. Usa /api/auth/refresh",
-            )
+            ) from e
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token inválido",
-        )
+        ) from e
 
 
 async def verify_optional_auth(

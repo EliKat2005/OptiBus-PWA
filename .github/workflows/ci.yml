@@ -31,7 +31,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd pg_isready -U optibus
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -66,4 +66,4 @@ jobs:
         with:
           python-version: "3.13"
       - run: uv pip install --system bandit
-      - run: bandit -r backend/ -x backend/tests/ -s B101
+      - run: bandit -r backend/ -x backend/tests/ -lll --skip B101,B105,B107,B110

@@ -14,11 +14,9 @@ from pathlib import Path
 import aiofiles
 import gpxpy
 import models
-from auth_utils import verify_api_key, verify_optional_auth, require_admin
+from auth_utils import verify_api_key, verify_optional_auth
 from config import (
-    BUS_ID_PATTERN,
     MAX_GPX_UPLOAD_MB,
-    SAFE_ROUTE_NAME_PATTERN,
     get_recorded_routes_dir,
 )
 from database import get_db
@@ -33,10 +31,9 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from sqlalchemy import and_, cast, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2.types import Geography
+from sqlalchemy import cast, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from utils.gps_cleaner import clean_gps_track
 from ws_manager import ConnectionManager
 

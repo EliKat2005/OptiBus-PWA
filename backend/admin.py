@@ -8,10 +8,9 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 import models
-from auth_utils import verify_api_key
 from config import API_KEY_ENABLED, APP_VERSION
 from database import get_db
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,8 +45,9 @@ async def admin_dashboard(
 
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
-        from auth_utils import OPTIBUS_API_KEY, decode_jwt_token
         from secrets import compare_digest
+
+        from auth_utils import OPTIBUS_API_KEY, decode_jwt_token
 
         if API_KEY_ENABLED and compare_digest(token, OPTIBUS_API_KEY):
             authed = True

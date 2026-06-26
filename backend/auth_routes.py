@@ -7,12 +7,11 @@ Separado de main.py para mantener modularidad.
 import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
-from secrets import compare_digest, token_urlsafe
+from secrets import token_urlsafe
 
 import models
 from auth_utils import (
     create_jwt_token,
-    decode_jwt_token,
     hash_password,
     require_admin,
     verify_api_key,

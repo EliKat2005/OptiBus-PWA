@@ -3,7 +3,6 @@ OptiBus Distributed Rate Limiter — DevSecOps v4.0
 Rate limiting con Redis con fallback a memoria. Validación de X-Forwarded-For.
 """
 
-import asyncio
 import logging
 import time
 from collections import defaultdict

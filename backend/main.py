@@ -7,46 +7,43 @@ Integra autenticación, rutas, GPS, WebSocket, rate limiting y monitoreo.
 import asyncio
 import json
 import logging
-import time
 from contextlib import asynccontextmanager
+from secrets import compare_digest
 
+from admin import init_admin
+
+# ── Importar módulos de rutas ──
+from admin import router as admin_router
+from auth_routes import router as auth_router
+from auth_utils import (
+    OPTIBUS_API_KEY,
+    decode_jwt_token,
+)
 from config import (
     ALLOWED_ORIGINS,
     API_KEY_ENABLED,
     APP_VERSION,
-    ENABLE_BUS_SIMULATOR,
     ensure_directories,
     validate_config,
 )
 from database import Base, engine
 from fastapi import (
-    Depends,
     FastAPI,
     Query,
     Request,
     WebSocket,
     WebSocketDisconnect,
-    status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
+from gps_routes import init_gps_routes
+from gps_routes import router as gps_router
 from prometheus_fastapi_instrumentator import Instrumentator
 from rate_limiter import DistributedRateLimiter, get_real_ip
-from secrets import compare_digest
-from sqlalchemy import text
-
-# ── Importar módulos de rutas ──
-from admin import router as admin_router, init_admin
-from auth_routes import router as auth_router
-from auth_utils import (
-    API_KEY_ENABLED,
-    OPTIBUS_API_KEY,
-    decode_jwt_token,
-    verify_api_key,
-)
-from gps_routes import router as gps_router, init_gps_routes
-from route_routes import router as route_router, init_route_routes
+from route_routes import init_route_routes
+from route_routes import router as route_router
 from simulator import start_simulator, stop_simulator
+from sqlalchemy import text
 from ws_manager import ConnectionManager
 
 # ── Logging ──

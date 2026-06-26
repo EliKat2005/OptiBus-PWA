@@ -1,16 +1,12 @@
 """Tests unitarios para el GPS Cleaner — DevSecOps v4.1."""
 
-import pytest
 from datetime import UTC, datetime
+
 from utils.gps_cleaner import (
     clean_gps_track,
     haversine,
     parse_iso_time,
     simplify_rdp,
-    MAX_SPEED_KMH,
-    MAX_ACCELERATION,
-    MIN_DISTANCE_M,
-    RDP_EPSILON,
 )
 
 
@@ -122,7 +118,7 @@ class TestCleanGpsTrack:
         ]
         result = clean_gps_track(points)
         # Solo debe haber 2 puntos únicos
-        unique = set((round(p[0], 6), round(p[1], 6)) for p in result)
+        unique = {(round(p[0], 6), round(p[1], 6)) for p in result}
         assert len(unique) == 2
 
     def test_realistic_bus_track(self):

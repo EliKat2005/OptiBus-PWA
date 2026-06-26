@@ -23,3 +23,9 @@ version = "0.5.1"
 description = "Real-time bus tracking PWA with GPS telemetry"
 requires-python = ">=3.13"
 license = {text = "AGPL-3.0"}
+
+[dependency-groups]
+dev = [
+    "bandit>=1.9.4",
+    "ruff>=0.15.20",
+]

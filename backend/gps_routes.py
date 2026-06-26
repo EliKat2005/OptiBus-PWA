@@ -7,19 +7,18 @@ Separado de main.py para mantener modularidad.
 import json
 import logging
 import math
-import os
 from datetime import UTC, datetime, timedelta
 
 import models
-from auth_utils import verify_api_key, verify_optional_auth
-from config import APP_VERSION, BUS_ID_PATTERN
+from auth_utils import verify_api_key
+from config import BUS_ID_PATTERN
 from database import get_db
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
+from geoalchemy2.types import Geography
 from pydantic import BaseModel, field_validator
 from sqlalchemy import and_, cast, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from geoalchemy2.types import Geography
 from ws_manager import ConnectionManager
 
 logger = logging.getLogger("optibus-gps-routes")
