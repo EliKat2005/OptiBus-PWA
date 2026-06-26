@@ -500,8 +500,7 @@ async def plan_route(
             models.Stop.route_id,
             models.Route.name.label("route_name"),
         )
-        .join(models.Route, models.Stop.route_id == models.Route.id)
-        .where(models.Stop.route_id.isnot(None))
+        .join(models.Route, models.Stop.route_id == models.Route.id, isouter=True)
         .order_by(models.Stop.id)
     )
     # route_to_stops: {route_id: {stop_id: stop_name, ...}}
@@ -513,6 +512,9 @@ async def plan_route(
     for r in all_stops_result:
         rid = r.route_id
         sid = r.id
+        if rid is None:
+            stop_names[sid] = r.name
+            continue  # Stops sin ruta: solo guardar nombre, no incluir en grafo
         if rid not in route_to_stops:
             route_to_stops[rid] = {}
             route_names[rid] = r.route_name

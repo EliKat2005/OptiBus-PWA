@@ -694,21 +694,19 @@ function renderSuggestions(suggestions, inputEl, suggestionsEl, field) {
         suggestionsEl.classList.remove('show');
         return;
     }
-    // Reutilizar mismo estilo que el buscador principal
+    // Mismo estilo EXACTO que el buscador principal (search-results-dropdown + search-result-item)
     suggestionsEl.innerHTML = suggestions.map(s => {
-        const icon = '🚏';
         const sub = s.route_name ? `<span class="chip-dot" style="background:var(--primary)"></span>${escapeHtml(s.route_name)}` : 'Sin ruta asignada';
-        return `<div class="search-result-item" data-stop-id="${s.id}" style="font-size:11px;padding:6px 10px">
-            <span class="result-icon" style="font-size:14px">${icon}</span>
+        return `<div class="search-result-item" data-stop-id="${s.id}">
+            <span class="result-icon">🚏</span>
             <div class="result-info">
-                <span class="result-name" style="font-size:12px">${escapeHtml(s.name)}</span>
-                <span class="result-sub" style="font-size:10px">${sub}</span>
+                <span class="result-name">${escapeHtml(s.name)}</span>
+                <span class="result-sub">${sub}</span>
             </div>
         </div>`;
     }).join('');
     suggestionsEl.classList.add('show');
 
-    // Click handler
     suggestionsEl.querySelectorAll('.search-result-item').forEach(item => {
         item.addEventListener('click', () => {
             const stopId = parseInt(item.dataset.stopId);
