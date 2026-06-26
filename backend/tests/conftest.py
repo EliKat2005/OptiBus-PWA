@@ -60,3 +60,4 @@ def jwt_token_headers():
         driver_id=1, bus_id="TEST-BUS", role="driver", token_type="access"
     )
     return {"Authorization": f"Bearer {token}"}
+
