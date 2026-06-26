@@ -30,12 +30,7 @@ jobs:
           POSTGRES_DB: optibus_test
         ports:
           - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U optibus -d optibus_test"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-          --health-start-period 10s
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
       redis:
         image: redis:7-alpine
         ports:
@@ -55,6 +50,11 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install -r backend/requirements.txt
+      - name: Wait for PostgreSQL
+        run: |
+          timeout 30 bash -c 'until pg_isready -h localhost -p 5432 -U optibus -d optibus_test; do sleep 1; done'
+        env:
+          PGPASSWORD: testpass
       - name: Run tests
         run: cd backend && python -m pytest tests/ -v --tb=short
 
