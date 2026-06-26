@@ -30,7 +30,12 @@ jobs:
           POSTGRES_DB: optibus_test
         ports:
           - 5432:5432
-        options: --health-cmd "pg_isready -U optibus" --health-interval 10s --health-timeout 5s --health-retries 5
+        options: >-
+          --health-cmd "pg_isready -U optibus -d optibus_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+          --health-start-period 10s
       redis:
         image: redis:7-alpine
         ports:
