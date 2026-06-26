@@ -15,7 +15,7 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           python-version: "3.13"
-      - run: uv pip install --system ruff
+      - run: pip install ruff
       - run: ruff check backend/
 
   test:
@@ -53,7 +53,7 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           python-version: "3.13"
-      - run: uv pip install --system -r backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
       - name: Run tests
         run: cd backend && python -m pytest tests/ -v --tb=short
 
@@ -65,5 +65,5 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           python-version: "3.13"
-      - run: uv pip install --system bandit
-      - run: bandit -r backend/ -x backend/tests/ -lll --skip B101,B105,B107,B110
+      - run: pip install bandit
+      - run: bandit -r backend/ -x backend/tests/ -ll --skip B101,B105,B107,B110
