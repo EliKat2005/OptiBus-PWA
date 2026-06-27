@@ -15,6 +15,12 @@ test: ## Ejecutar tests de integración
 test-gps: ## Ejecutar tests del GPS Cleaner
 	cd backend && python -m pytest tests/ -v -k "gps" || echo "No hay tests específicos para GPS Cleaner aún"
 
+headers: ## Añadir cabeceras de copyright a todos los archivos
+	bash scripts/add_headers.sh
+
+migrate-tenant: ## Migrar DB a multi-tenant
+	python3 scripts/migrate_multi_tenant.py
+
 lint: ## Linting con ruff
 	ruff check backend/
 
