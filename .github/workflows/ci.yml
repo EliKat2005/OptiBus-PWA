@@ -11,7 +11,7 @@ jobs:
     name: Lint con Ruff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v4
         with:
           python-version: "3.13"
@@ -22,7 +22,7 @@ jobs:
     name: Tests unitarios
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v4
         with:
           python-version: "3.13"
@@ -34,7 +34,7 @@ jobs:
     name: SAST Security Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v4
         with:
           python-version: "3.13"
