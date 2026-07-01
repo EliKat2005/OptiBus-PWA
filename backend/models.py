@@ -141,3 +141,41 @@ class BusPosition(Base):
         Index('idx_bus_positions_cooperative', 'cooperative_id', 'recorded_at'),
         CheckConstraint('speed >= 0', name='ck_speed_non_negative'),
     )
+
+
+class GeofenceAlert(Base):
+    """Alertas de geocerca (desvíos de ruta, entradas/salidas de zonas)."""
+    __tablename__ = "geofence_alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cooperative_id = Column(Integer, ForeignKey("cooperatives.id"), nullable=False, index=True)
+    bus_id = Column(String, index=True, nullable=False)
+    route_id = Column(Integer, nullable=True)
+    alert_type = Column(String(50), nullable=False)  # 'off_route', 'on_route', 'zone_entry', 'zone_exit'
+    message = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
+
+    __table_args__ = (
+        Index('idx_geofence_coop_time', 'cooperative_id', 'created_at'),
+    )
+
+
+class Infraction(Base):
+    """Infracciones: excesos de velocidad, desvíos de ruta."""
+    __tablename__ = "infractions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cooperative_id = Column(Integer, ForeignKey("cooperatives.id"), nullable=False, index=True)
+    bus_id = Column(String, index=True, nullable=False)
+    driver_id = Column(Integer, nullable=True)
+    infraction_type = Column(String(50), nullable=False)  # 'speeding', 'off_route'
+    speed_kmh = Column(Float, default=0.0)
+    max_allowed_kmh = Column(Float, default=60.0)
+    lat = Column(Float, nullable=True)
+    lon = Column(Float, nullable=True)
+    recorded_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True)
+
+    __table_args__ = (
+        Index('idx_infractions_coop_time', 'cooperative_id', 'recorded_at'),
+        CheckConstraint('speed_kmh >= 0', name='ck_infraction_speed_non_negative'),
+    )

@@ -81,9 +81,10 @@ def _b64url_decode(data: str) -> bytes:
 
 
 def create_jwt_token(
-    driver_id: int, bus_id: str, role: str, token_type: str = "access"
+    driver_id: int, bus_id: str, role: str, token_type: str = "access",
+    cooperative_id: int | None = None,
 ) -> str:
-    """Genera un JWT firmado manualmente (HMAC-SHA256)."""
+    """Genera un JWT firmado manualmente (HMAC-SHA256). Incluye cooperative_id para multi-tenancy."""
     now_ts = int(_now_ts())
     if token_type == "access":
         exp_ts = now_ts + (ACCESS_TOKEN_EXPIRE_MINUTES * 60)
@@ -97,6 +98,7 @@ def create_jwt_token(
         "type": token_type,
         "iat": now_ts,
         "exp": exp_ts,
+        "cooperative_id": cooperative_id,
     }
 
     header = {"alg": "HS256", "typ": "JWT"}

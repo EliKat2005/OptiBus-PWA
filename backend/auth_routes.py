@@ -117,8 +117,8 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             detail="Credenciales inválidas",
         )
 
-    access_token = create_jwt_token(driver.id, driver.bus_id, driver.role, "access")
-    refresh_token = create_jwt_token(driver.id, driver.bus_id, driver.role, "refresh")
+    access_token = create_jwt_token(driver.id, driver.bus_id, driver.role, "access", cooperative_id=driver.cooperative_id)
+    refresh_token = create_jwt_token(driver.id, driver.bus_id, driver.role, "refresh", cooperative_id=driver.cooperative_id)
 
     logger.info(
         f"Login exitoso: {driver.email} (role={driver.role}, bus={driver.bus_id})"

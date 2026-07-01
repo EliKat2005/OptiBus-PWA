@@ -36,6 +36,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from b2b_routes import router as b2b_router
 from gps_routes import init_gps_routes
 from gps_routes import router as gps_router
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -279,6 +280,7 @@ app.include_router(auth_router)
 app.include_router(gps_router)
 app.include_router(route_router)
 app.include_router(admin_router)
+app.include_router(b2b_router)
 
 
 # ── Bloque para métricas/admin Caddy ──
