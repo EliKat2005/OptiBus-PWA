@@ -69,7 +69,9 @@ async def bus_simulator(ws_manager: ConnectionManager):
         f"Simulador iniciado con {len(all_buses)} buses en {len(routes_data)} rutas."
     )
 
+    iteration = 0
     while _simulator_running:
+        iteration += 1
         # Calcular nuevas posiciones para todos los buses
         buses_payload = []
         for bus in all_buses:
@@ -110,6 +112,44 @@ async def bus_simulator(ws_manager: ConnectionManager):
                 "type": "bus_positions",
                 "buses": buses_payload,
             }))
+
+        # ── Demo: Inyectar infracciones aleatorias para el pitch ──
+        if iteration % 15 == 0 and all_buses:
+            # Infracción de velocidad para bus_r4_2
+            demo_bus = next((b for b in all_buses if "r4_2" in b["id"]), all_buses[-1])
+            lon_demo, lat_demo = demo_bus["coords"][demo_bus["idx"]]
+            try:
+                async with SessionLocal() as db:
+                    db.add(models.Infraction(
+                        cooperative_id=1,
+                        bus_id=demo_bus["id"],
+                        driver_id=1,
+                        infraction_type="speeding",
+                        speed_kmh=72.5,
+                        max_allowed_kmh=60.0,
+                        lat=lat_demo,
+                        lon=lon_demo,
+                        recorded_at=datetime.now(UTC),
+                    ))
+                    await db.commit()
+            except Exception:
+                pass
+
+        if iteration % 10 == 0 and all_buses:
+            # Alerta de geocerca (bus fuera de ruta)
+            demo_bus = all_buses[iteration % len(all_buses)]
+            try:
+                async with SessionLocal() as db:
+                    db.add(models.GeofenceAlert(
+                        cooperative_id=1,
+                        bus_id=demo_bus["id"],
+                        route_id=demo_bus.get("route_id"),
+                        alert_type="off_route",
+                        message=f"Bus {demo_bus['id']} se desvio de la ruta asignada",
+                    ))
+                    await db.commit()
+            except Exception:
+                pass
 
         await asyncio.sleep(3)
 
