@@ -661,6 +661,10 @@ document.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('/sw.js').then(reg => console.log('✅ SW registrado')).catch(err => console.error('❌ SW:', err));
         });
+        // Auto-recarga cuando un nuevo Service Worker toma control
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            window.location.reload();
+        });
     }
     loadRoutes();
     connectWebSocket();
