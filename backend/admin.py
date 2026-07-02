@@ -74,115 +74,111 @@ async def admin_dashboard(
 
 
 ADMIN_HTML = """<!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="h-full">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OptiBus Admin — Centro de Control</title>
-    <style>
-        *{{margin:0;padding:0;box-sizing:border-box}}
-        body{{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;padding:20px}}
-        h1{{text-align:center;margin-bottom:6px;color:#38bdf8;font-size:24px}}
-        .subtitle{{text-align:center;color:#64748b;font-size:12px;margin-bottom:20px}}
-        .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;max-width:1400px;margin:0 auto 16px}}
-        .card{{background:#1e293b;border-radius:12px;padding:16px;border:1px solid #334155}}
-        .card h2{{font-size:12px;color:#94a3b8;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px}}
-        .card .value{{font-size:28px;font-weight:700;color:#38bdf8}}
-        .card .sub{{font-size:11px;color:#64748b;margin-top:2px}}
-        .warning .value{{color:#f59e0b}}
-        .danger .value{{color:#ef4444}}
-        .success .value{{color:#10b981}}
-        .section-title{{font-size:14px;font-weight:700;color:#e2e8f0;margin:24px 0 10px;padding-bottom:6px;border-bottom:1px solid #334155;max-width:1400px;margin-left:auto;margin-right:auto}}
-        .flex-row{{display:flex;gap:12px;max-width:1400px;margin:0 auto;flex-wrap:wrap}}
-        .billing-card{{flex:1;min-width:280px;background:linear-gradient(135deg,#1e293b,#1e3a5f);border-radius:12px;padding:20px;border:1px solid #2563eb}}
-        .billing-card h2{{font-size:13px;color:#38bdf8;margin-bottom:10px}}
-        .billing-row{{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1e3a5f;font-size:13px}}
-        .billing-total{{font-size:20px;font-weight:700;color:#10b981;margin-top:10px}}
-        .btn{{display:inline-block;background:#2563eb;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px}}
-        .btn:hover{{background:#1d4ed8}}
-        table{{width:100%;border-collapse:collapse;margin-top:8px}}
-        th,td{{padding:6px 10px;text-align:left;border-bottom:1px solid #334155;font-size:12px}}
-        th{{color:#94a3b8;font-weight:600}}
-        .status-bar{{display:flex;gap:12px;justify-content:center;margin-bottom:16px;flex-wrap:wrap;font-size:11px}}
-        .status-dot{{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}}
-        .status-dot.ok{{background:#10b981}}.status-dot.err{{background:#ef4444}}
-        .badge{{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}}
-        .badge-active{{background:#065f46;color:#6ee7b7}}
-        .badge-speeding{{background:#7f1d1d;color:#fca5a5}}
-    </style>
+    <title>OptiBus Control — Centro de Mando</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>body{{font-family:'Inter',system-ui,sans-serif}}</style>
 </head>
-<body>
-    <h1>🚌 OptiBus — Centro de Control</h1>
-    <p class="subtitle">Cooperativa 28 de Septiembre · Plan Premium Multi‑tenant · v{version}</p>
-
-    <div class="status-bar">
-        <span>🔑 Autenticado con API Key</span>
-        <span id="statusBar"></span>
-    </div>
-
-    <div class="section-title">📊 Indicadores Operativos (KPIs)</div>
-    <div class="grid">
-        <div class="card"><h2>🚌 Buses Activos</h2><div class="value" id="activeBuses">-</div><div class="sub">Últimos 5 minutos</div></div>
-        <div class="card warning"><h2>⚠️ Excesos de Velocidad</h2><div class="value" id="infractionsToday">-</div><div class="sub">Detectados hoy</div></div>
-        <div class="card danger"><h2>📍 Desvíos de Ruta</h2><div class="value" id="alertsToday">-</div><div class="sub">Alertas de geocerca hoy</div></div>
-        <div class="card success"><h2>📈 Eficiencia Flota</h2><div class="value" id="fleetEfficiency">-</div><div class="sub">Cumplimiento de itinerario</div></div>
-    </div>
-
-    <div class="section-title">💳 Suscripción & Facturación</div>
-    <div class="flex-row">
-        <div class="billing-card">
-            <h2>🔐 Plan Actual</h2>
-            <div class="billing-row"><span>Plan</span><span style="color:#38bdf8;font-weight:600">Premium Multi‑tenant</span></div>
-            <div class="billing-row"><span>Buses Licenciados</span><span>8 / 10</span></div>
-            <div class="billing-row"><span>Precio por Bus</span><span>$25.00 / mes</span></div>
-            <div class="billing-total">$200.00 / mes</div>
-            <button class="btn" style="margin-top:10px" onclick="alert('Solicitud enviada. El equipo de OptiBus se contactará en 24h.')">➕ Añadir más vehículos</button>
+<body class="h-full bg-slate-50">
+<div class="flex h-full">
+    <aside class="w-64 bg-slate-900 flex flex-col flex-shrink-0">
+        <div class="p-6 border-b border-slate-700">
+            <div class="flex items-center gap-3"><span class="text-2xl">🚌</span><div><h1 class="text-white font-bold text-lg leading-tight">OptiBus</h1><p class="text-slate-400 text-xs">Centro de Control</p></div></div>
         </div>
-        <div class="billing-card" style="flex:1">
-            <h2>💰 ROI Estimado (Cooperativa)</h2>
-            <div class="billing-row"><span>Inversión Mensual</span><span>$200.00</span></div>
-            <div class="billing-row"><span>Combustible Ahorrado</span><span style="color:#10b981">$450.00</span></div>
-            <div class="billing-row"><span>Multas Evitadas</span><span style="color:#10b981">$120.00</span></div>
-            <div class="billing-total">Ahorro Neto: +$370.00 / mes</div>
-            <div class="sub" style="margin-top:8px;font-size:10px">Basado en reducción del 15% en consumo de combustible y eliminación de 3 multas mensuales promedio</div>
+        <div class="p-6 border-b border-slate-700">
+            <p class="text-slate-400 text-xs uppercase tracking-wider mb-1">Cooperativa</p>
+            <p class="text-white font-semibold text-sm">28 de Septiembre</p>
+            <p class="text-slate-500 text-xs mt-2">Plan Premium · v{version}</p>
         </div>
-    </div>
-
-    <div class="section-title">📍 Flota en Tiempo Real</div>
-    <div class="card" style="max-width:1400px;margin:0 auto">
-        <div style="overflow-x:auto"><table><thead><tr><th>Bus ID</th><th>Estado</th><th>Latitud</th><th>Longitud</th><th>Velocidad</th><th>Última vez</th></tr></thead><tbody id="busesTable"></tbody></table></div>
-    </div>
-
-    <script>
-        const ADMIN_TOKEN = "{admin_token}";
-        if (ADMIN_TOKEN) {{ sessionStorage.setItem("optibus_admin_token", ADMIN_TOKEN); }} else {{ ADMIN_TOKEN = sessionStorage.getItem("optibus_admin_token") || ""; }}
-        const AUTH = {{ headers: {{ Authorization: "Bearer " + ADMIN_TOKEN }} }};
-        let todayCount = 0;
-
-        async function loadData(){{
-            try{{
-                const h=await fetch("/health", AUTH).catch(()=>null);const hd=h&&h.ok?await h.json():{{database:"offline",redis:"offline"}};
-                document.getElementById("statusBar").innerHTML='<span><span class="status-dot '+(hd.database==="connected"?"ok":"err")+'"></span>DB: '+hd.database+'</span><span><span class="status-dot '+(hd.redis==="connected"?"ok":"err")+'"></span>Redis: '+hd.redis+'</span>';
-
-                const dash=await fetch("/api/b2b/dashboard", AUTH).catch(()=>null);
-                if(dash&&dash.ok){{ const d=await dash.json(); document.getElementById("activeBuses").textContent=d.active_buses||0; }}
-
-                const inf=await fetch("/api/b2b/infractions?limit=100", AUTH).catch(()=>null);
-                todayCount=0;
-                if(inf&&inf.ok){{ const i=await inf.json(); const today=new Date().toDateString(); todayCount=(i.infractions||[]).filter(function(x){{return new Date(x.recorded_at).toDateString()===today;}}).length; document.getElementById("infractionsToday").textContent=todayCount;
-                    if(todayCount>0) document.getElementById("infractionsToday").parentElement.classList.add("warning"); }}
-
-                const al=await fetch("/api/b2b/geofence/alerts?limit=100", AUTH).catch(()=>null);
-                if(al&&al.ok){{ const a=await al.json(); const today2=new Date().toDateString(); const alertCount=(a.alerts||[]).filter(function(x){{return new Date(x.created_at).toDateString()===today2;}}).length; document.getElementById("alertsToday").textContent=alertCount;
-                    if(alertCount>0) document.getElementById("alertsToday").parentElement.classList.add("danger"); }}
-
-                const fleet=await fetch("/api/b2b/fleet?minutes=5", AUTH).catch(()=>null);
-                const tb=document.getElementById("busesTable");
-                if(fleet&&fleet.ok){{ const f=await fleet.json(); const fleetData=f.fleet||[]; document.getElementById("fleetEfficiency").textContent=fleetData.length>0?'92%':'100%';
-                tb.innerHTML=fleetData.map(function(b){{ const hasInf=(todayCount>0&&b.bus_id==='bus_r4_2'); const status=hasInf?'<span class="badge badge-speeding">Exceso Velocidad</span>':'<span class="badge badge-active">Normal</span>';
-                return '<tr><td>'+b.bus_id+'</td><td>'+status+'</td><td>'+(b.lat?b.lat.toFixed(6):'-')+'</td><td>'+(b.lon?b.lon.toFixed(6):'-')+'</td><td>'+b.speed_kmh+' km/h</td><td>'+new Date(b.last_seen).toLocaleTimeString()+'</td></tr>'; }}).join("")||'<tr><td colspan="6">No hay buses activos</td></tr>'; }}
-            }}catch(e){{ console.error(e); }}
-        }}
-        loadData();setInterval(loadData,15000);
-    </script>
+        <nav class="flex-1 p-4 space-y-1">
+            <span class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-slate-800 text-white text-sm font-medium"><span>📊</span> Dashboard</span>
+            <span class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm font-medium"><span>📍</span> Flota en Vivo</span>
+            <span class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm font-medium"><span>⚠️</span> Infracciones</span>
+            <span class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm font-medium"><span>💰</span> Facturacion</span>
+        </nav>
+        <div class="p-4 border-t border-slate-700 flex items-center gap-2" id="statusBar">Cargando...</div>
+    </aside>
+    <main class="flex-1 overflow-y-auto p-8">
+        <div class="flex justify-between items-center mb-8">
+            <div><h2 class="text-2xl font-bold text-slate-800">Panel de Control</h2><p class="text-slate-500 text-sm mt-0.5">Monitoreo en tiempo real de la flota</p></div>
+            <span class="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-medium text-slate-600 shadow-sm">🔑 Autenticado</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <div class="flex justify-between mb-3"><span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Buses Activos</span><span class="text-2xl">🚌</span></div>
+                <div class="text-3xl font-extrabold text-slate-800" id="activeBuses">-</div><div class="text-xs text-slate-400 mt-1">Ultimos 5 minutos</div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-amber-200 p-5">
+                <div class="flex justify-between mb-3"><span class="text-xs font-semibold text-amber-600 uppercase tracking-wider">Excesos Velocidad</span><span class="text-2xl">⚠️</span></div>
+                <div class="text-3xl font-extrabold text-amber-600" id="infractionsToday">-</div><div class="text-xs text-slate-400 mt-1">Detectados hoy</div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-rose-200 p-5">
+                <div class="flex justify-between mb-3"><span class="text-xs font-semibold text-rose-600 uppercase tracking-wider">Desvios de Ruta</span><span class="text-2xl">📍</span></div>
+                <div class="text-3xl font-extrabold text-rose-600" id="alertsToday">-</div><div class="text-xs text-slate-400 mt-1">Alertas geocerca hoy</div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-emerald-200 p-5">
+                <div class="flex justify-between mb-3"><span class="text-xs font-semibold text-emerald-600 uppercase tracking-wider">Eficiencia Flota</span><span class="text-2xl">📈</span></div>
+                <div class="text-3xl font-extrabold text-emerald-600" id="fleetEfficiency">-</div><div class="text-xs text-slate-400 mt-1">Cumplimiento itinerario</div>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">📍 Flota en Tiempo Real</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm"><thead><tr class="border-b border-slate-200"><th class="text-left py-3 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider">Bus ID</th><th class="text-left py-3 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider">Estado</th><th class="text-left py-3 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider">Latitud</th><th class="text-left py-3 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider">Longitud</th><th class="text-left py-3 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider">Velocidad</th><th class="text-left py-3 px-4 font-semibold text-slate-500 uppercase text-xs tracking-wider">Ultima vez</th></tr></thead>
+                <tbody id="busesTable"><tr><td colspan="6" class="py-8 text-center text-slate-400">Cargando datos...</td></tr></tbody></table>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">💳 Plan Actual</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between py-2 border-b border-slate-100"><span class="text-slate-600">Plan</span><span class="font-semibold text-indigo-600">Premium Multi-tenant</span></div>
+                    <div class="flex justify-between py-2 border-b border-slate-100"><span class="text-slate-600">Buses Licenciados</span><span class="font-semibold text-slate-800">8 / 10</span></div>
+                    <div class="flex justify-between py-2 border-b border-slate-100"><span class="text-slate-600">Precio por Bus</span><span class="font-semibold text-slate-800">$25.00 / mes</span></div>
+                    <div class="flex justify-between py-3"><span class="text-lg font-bold text-slate-800">Total</span><span class="text-lg font-extrabold text-indigo-600">$200.00 / mes</span></div>
+                    <button onclick="alert('Solicitud enviada. OptiBus se contactara en 24h.')" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg transition text-sm">+ Añadir mas vehiculos</button>
+                </div>
+            </div>
+            <div class="bg-gradient-to-br from-emerald-50 to-white rounded-xl shadow-sm border border-emerald-200 p-6">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">💰 ROI Estimado</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between py-2 border-b border-emerald-100"><span class="text-slate-600">Inversion Mensual</span><span class="font-semibold text-slate-800">$200.00</span></div>
+                    <div class="flex justify-between py-2 border-b border-emerald-100"><span class="text-slate-600">Combustible Ahorrado</span><span class="font-semibold text-emerald-600">+$450.00</span></div>
+                    <div class="flex justify-between py-2 border-b border-emerald-100"><span class="text-slate-600">Multas Evitadas</span><span class="font-semibold text-emerald-600">+$120.00</span></div>
+                    <div class="flex justify-between py-3"><span class="text-lg font-bold text-slate-800">Ahorro Neto</span><span class="text-lg font-extrabold text-emerald-600">+$370.00 / mes</span></div>
+                    <p class="text-xs text-slate-500 mt-1">Reduccion del 15% combustible, 3 multas evitadas.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+<script>
+    const ADMIN_TOKEN = "{admin_token}";
+    if (ADMIN_TOKEN) {{ sessionStorage.setItem("optibus_admin_token", ADMIN_TOKEN); }} else {{ ADMIN_TOKEN = sessionStorage.getItem("optibus_admin_token") || ""; }}
+    const AUTH = {{ headers: {{ Authorization: "Bearer " + ADMIN_TOKEN }} }};
+    let todayCount = 0;
+    async function loadData(){{
+        try{{
+            const h=await fetch("/health", AUTH).catch(()=>null);const hd=h&&h.ok?await h.json():{{database:"offline",redis:"offline"}};
+            document.getElementById("statusBar").innerHTML='<span class="w-2 h-2 rounded-full '+(hd.database==="connected"?"bg-green-400":"bg-rose-400")+'"></span><span class="text-xs text-slate-400">DB: '+hd.database+'</span>';
+            const dash=await fetch("/api/b2b/dashboard", AUTH).catch(()=>null);
+            if(dash&&dash.ok){{ const d=await dash.json(); document.getElementById("activeBuses").textContent=d.active_buses||0; }}
+            const inf=await fetch("/api/b2b/infractions?limit=100", AUTH).catch(()=>null);
+            todayCount=0;
+            if(inf&&inf.ok){{ const i=await inf.json(); const today=new Date().toDateString(); todayCount=(i.infractions||[]).filter(function(x){{return new Date(x.recorded_at).toDateString()===today;}}).length; document.getElementById("infractionsToday").textContent=todayCount; }}
+            const al=await fetch("/api/b2b/geofence/alerts?limit=100", AUTH).catch(()=>null);
+            if(al&&al.ok){{ const a=await al.json(); const today2=new Date().toDateString(); const alertCount=(a.alerts||[]).filter(function(x){{return new Date(x.created_at).toDateString()===today2;}}).length; document.getElementById("alertsToday").textContent=alertCount; }}
+            const fleet=await fetch("/api/b2b/fleet?minutes=5", AUTH).catch(()=>null);
+            const tb=document.getElementById("busesTable");
+            if(fleet&&fleet.ok){{ const f=await fleet.json(); const fleetData=f.fleet||[]; document.getElementById("fleetEfficiency").textContent=fleetData.length>0?'92%':'100%';
+            tb.innerHTML=fleetData.map(function(b){{ const hasInf=(todayCount>0&&b.bus_id==='bus_r4_2'); const status=hasInf?'<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800">⚠️ Exceso Velocidad</span>':'<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">🟢 Normal</span>';
+            return '<tr class="border-b border-slate-100 hover:bg-slate-50"><td class="py-3 px-4 font-medium text-slate-800">'+b.bus_id+'</td><td class="py-3 px-4">'+status+'</td><td class="py-3 px-4 text-slate-600 font-mono text-xs">'+(b.lat?b.lat.toFixed(5):'—')+'</td><td class="py-3 px-4 text-slate-600 font-mono text-xs">'+(b.lon?b.lon.toFixed(5):'—')+'</td><td class="py-3 px-4 text-slate-600">'+b.speed_kmh+' km/h</td><td class="py-3 px-4 text-slate-500 text-xs">'+new Date(b.last_seen).toLocaleTimeString()+'</td></tr>'; }}).join("")||'<tr><td colspan="6" class="py-8 text-center text-slate-400">No hay buses activos</td></tr>'; }}
+        }}catch(e){{ console.error(e); }}
+    }}
+    loadData();setInterval(loadData,15000);
+</script>
 </body>
 </html>"""
