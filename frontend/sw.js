@@ -92,7 +92,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
-  // Para assets propios y navegación: Cache First, Network fallback
+  // Para navegación HTML: SIEMPRE Network First (necesita HTML más reciente)
+  if (request.mode === 'navigate') {
+    event.respondWith(networkFirstWithCache(event.request));
+    return;
+  }
+  
+  // Para assets propios: Cache First, Network fallback
   event.respondWith(cacheFirstWithNetworkFallback(event.request));
 });
 
