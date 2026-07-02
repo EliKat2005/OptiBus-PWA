@@ -1,6 +1,6 @@
 // OptiBus Service Worker - Estrategia Cache First solo para assets propios
 // CORRECCIÓN: Versionado estático (sin Date.now()) para evitar regeneración infinita
-const CACHE_VERSION = 'v2.1.0';
+const CACHE_VERSION = 'v2.2.0';
 const CACHE_NAME = `optibus-pwa-${CACHE_VERSION}`;
 const ASSETS_TO_CACHE = [
   '/',
