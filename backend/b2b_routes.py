@@ -28,7 +28,7 @@ async def _get_cooperative(request: Request, _auth: dict, db: AsyncSession) -> i
         if coop_id is not None:
             return int(coop_id)
     if isinstance(auth, dict) and auth.get("auth_type") == "api_key":
-        return 0
+        return 1  # API Key global → cooperativa 1 (28 de Septiembre)
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Autenticacion B2B requerida (JWT con cooperative_id)",
