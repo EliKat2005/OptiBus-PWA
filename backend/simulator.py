@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 import models
 from database import SessionLocal, engine
-from sqlalchemy import func, select, text as sa_text
+from sqlalchemy import func, select
 from ws_manager import ConnectionManager
 
 logger = logging.getLogger("optibus-simulator")
@@ -92,7 +92,7 @@ async def bus_simulator(ws_manager: ConnectionManager):
                 "buses": buses_payload,
             }))
 
-            # Persistir en DB
+            # Persistir en DB usando el ORM correcto de SQLAlchemy
             try:
                 async with SessionLocal() as db:
                     for entry in buses_payload:
@@ -100,14 +100,14 @@ async def bus_simulator(ws_manager: ConnectionManager):
                         db.add(models.BusPosition(
                             cooperative_id=1,
                             bus_id=entry["id"],
-                            geom=sa_text(f"ST_GeomFromText('{point}', 4326)"),
+                            geom=func.ST_GeomFromText(point, 4326),
                             speed=25.0,
                             route_id=entry.get("route_id"),
                             recorded_at=datetime.now(UTC),
                         ))
                     await db.commit()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Simulador DB: {e}")
 
         await asyncio.sleep(3)
 
