@@ -1,61 +1,13 @@
 """
-OptiBus B2B Middleware — DevSecOps v5.0
-Middleware multi-tenant estricto para endpoints de cooperativa.
-Inyecta cooperative_id en request.state y verifica pertenencia.
-"""
-
-import logging
-
-from fastapi import Request, HTTPException, status
-
-logger = logging.getLogger("optibus-b2b-middleware")
-
-
-async def extract_cooperative_id(request: Request) -> int | None:
-    """
-    Extrae el cooperative_id del request.state (inyectado por verify_cooperative_auth).
-    Retorna None si el endpoint no requiere autenticación de cooperativa.
-    """
-    return getattr(request.state, "cooperative_id", None)
-
-
-def require_cooperative_id(cooperative_id: int | None) -> int:
-    """
-    Valida que el cooperative_id exista. Lanza 403 si no está autenticado.
-    Uso: cooperative_id = require_cooperative_id(request.state.cooperative_id)
-    """
-    if cooperative_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso restringido: cooperativa no identificada.",
-        )
-    return cooperative_id
-
-
-def verify_cooperative_role(auth_payload: dict, required_roles: list[str]) -> bool:
-    """
-    Verifica que el usuario autenticado tenga uno de los roles requeridos.
-    Roles B2B: 'admin', 'dispatcher', 'driver'
-    """
-    role = auth_payload.get("role", "public")
-    return role in required_roles
-</content>
-
-<write_to_file>
-<path>backend/b2b_routes.py</path>
-<content>
-"""
 OptiBus B2B Dashboard Routes — DevSecOps v5.0
 Endpoints protegidos para cooperativas: dashboard, geocercas, infracciones.
 """
 
-import json
 import logging
 from datetime import UTC, datetime, timedelta
 
 import models
 from auth_utils import verify_api_key
-from b2b_middleware import extract_cooperative_id, require_cooperative_id
 from database import get_db
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
@@ -68,11 +20,6 @@ logger = logging.getLogger("optibus-b2b-routes")
 router = APIRouter(prefix="/api/b2b", tags=["b2b"])
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# Helpers
-# ═══════════════════════════════════════════════════════════════════════
-
-
 async def _get_cooperative(request: Request, _auth: dict, db: AsyncSession) -> int:
     """Obtiene el cooperative_id del JWT autenticado."""
     auth = _auth
@@ -80,18 +27,12 @@ async def _get_cooperative(request: Request, _auth: dict, db: AsyncSession) -> i
         coop_id = auth.get("cooperative_id")
         if coop_id is not None:
             return int(coop_id)
-    # Fallback: API Key admin ve todo
     if isinstance(auth, dict) and auth.get("auth_type") == "api_key":
-        return 0  # 0 = superadmin, ve todas las cooperativas
+        return 0
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Autenticación B2B requerida (JWT con cooperative_id)",
+        detail="Autenticacion B2B requerida (JWT con cooperative_id)",
     )
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# Endpoints
-# ═══════════════════════════════════════════════════════════════════════
 
 
 @router.get("/dashboard")
@@ -100,16 +41,9 @@ async def dashboard(
     _auth: dict = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Panel de control de la cooperativa:
-    - Buses activos
-    - Rutas asignadas
-    - Conductores registrados
-    - Estadísticas de uso
-    """
+    """Panel de control: buses activos, rutas, conductores."""
     coop_id = await _get_cooperative(request, _auth, db)
 
-    # Buses activos (últimos 5 minutos)
     since = datetime.now(UTC) - timedelta(minutes=5)
     active_query = select(
         func.count(func.distinct(models.BusPosition.bus_id))
@@ -120,27 +54,21 @@ async def dashboard(
     active_result = await db.execute(active_query)
     active_buses = active_result.scalar() or 0
 
-    # Rutas de la cooperativa
     routes_query = select(func.count(models.Route.id)).where(
         models.Route.cooperative_id == coop_id
     )
-    routes_result = await db.execute(routes_query)
-    total_routes = routes_result.scalar() or 0
+    total_routes = (await db.execute(routes_query)).scalar() or 0
 
-    # Paradas de la cooperativa
     stops_query = select(func.count(models.Stop.id)).where(
         models.Stop.cooperative_id == coop_id
     )
-    stops_result = await db.execute(stops_query)
-    total_stops = stops_result.scalar() or 0
+    total_stops = (await db.execute(stops_query)).scalar() or 0
 
-    # Conductores activos
     drivers_query = select(func.count(models.Driver.id)).where(
         models.Driver.cooperative_id == coop_id,
         models.Driver.is_active.is_(True),
     )
-    drivers_result = await db.execute(drivers_query)
-    active_drivers = drivers_result.scalar() or 0
+    active_drivers = (await db.execute(drivers_query)).scalar() or 0
 
     return {
         "cooperative_id": coop_id,
@@ -148,7 +76,6 @@ async def dashboard(
         "total_routes": total_routes,
         "total_stops": total_stops,
         "active_drivers": active_drivers,
-        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -159,14 +86,10 @@ async def fleet_status(
     minutes: int = Query(default=5, le=60),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Estado de la flota de la cooperativa:
-    - Lista de buses con última posición, velocidad, estado (Activo/Inactivo)
-    """
+    """Estado de la flota con ultima posicion y velocidad."""
     coop_id = await _get_cooperative(request, _auth, db)
 
     since = datetime.now(UTC) - timedelta(minutes=minutes)
-
     subq = (
         select(
             models.BusPosition.bus_id,
@@ -219,9 +142,7 @@ async def geofence_alerts(
     limit: int = Query(default=20, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Historial de alertas de geocerca (entrada/salida de zonas clave).
-    """
+    """Historial de alertas de geocerca."""
     coop_id = await _get_cooperative(request, _auth, db)
 
     result = await db.execute(
@@ -251,9 +172,7 @@ async def infractions_list(
     limit: int = Query(default=20, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Reporte de infracciones: excesos de velocidad, desvíos de ruta.
-    """
+    """Reporte de infracciones: excesos de velocidad, desvios."""
     coop_id = await _get_cooperative(request, _auth, db)
 
     result = await db.execute(
@@ -270,7 +189,10 @@ async def infractions_list(
             "infraction_type": i.infraction_type,
             "speed_kmh": round(i.speed_kmh, 1),
             "max_allowed_kmh": round(i.max_allowed_kmh, 1),
-            "location": {"lat": round(i.lat, 6), "lon": round(i.lon, 6)} if i.lat and i.lon else None,
+            "location": (
+                {"lat": round(i.lat, 6), "lon": round(i.lon, 6)}
+                if i.lat and i.lon else None
+            ),
             "recorded_at": i.recorded_at.isoformat() if i.recorded_at else None,
         }
         for i in result
@@ -284,9 +206,7 @@ async def check_geofence_b2b(
     _auth: dict = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Verifica geocerca para un bus específico y genera alerta si es necesario.
-    """
+    """Verifica geocerca para un bus especifico."""
     coop_id = await _get_cooperative(request, _auth, db)
     body = await request.json()
     bus_id = body.get("bus_id")
@@ -300,7 +220,6 @@ async def check_geofence_b2b(
 
     point = f"SRID=4326;POINT({lon} {lat})"
 
-    # Verificar ruta asignada
     route_query = select(
         models.Route.id,
         models.Route.name,
@@ -321,7 +240,6 @@ async def check_geofence_b2b(
     route = route_result.first()
 
     if not route:
-        # Generar alerta de desvío
         alert = models.GeofenceAlert(
             cooperative_id=coop_id,
             bus_id=bus_id,
@@ -331,18 +249,9 @@ async def check_geofence_b2b(
         )
         db.add(alert)
         await db.commit()
-        return {
-            "bus_id": bus_id,
-            "status": "off_route",
-            "alert": f"Bus fuera de ruta (>{max_distance}m)",
-        }
+        return {"bus_id": bus_id, "status": "off_route", "alert": f"Bus fuera de ruta (>{max_distance}m)"}
 
-    return {
-        "bus_id": bus_id,
-        "status": "on_route",
-        "route_name": route.name,
-        "distance_m": round(route.distance, 1),
-    }
+    return {"bus_id": bus_id, "status": "on_route", "route_name": route.name, "distance_m": round(route.distance, 1)}
 
 
 @router.post("/infractions/report-speed")
@@ -351,7 +260,7 @@ async def report_speed_infraction(
     _auth: dict = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
 ):
-    """Registra una infracción por exceso de velocidad."""
+    """Registra una infraccion por exceso de velocidad."""
     coop_id = await _get_cooperative(request, _auth, db)
     body = await request.json()
     bus_id = body.get("bus_id")
@@ -378,5 +287,5 @@ async def report_speed_infraction(
     db.add(infraction)
     await db.commit()
 
-    logger.warning(f"Infracción: {bus_id} a {speed_kmh} km/h (máx {max_allowed})")
+    logger.warning(f"Infraccion: {bus_id} a {speed_kmh} km/h (max {max_allowed})")
     return {"status": "recorded", "infraction_id": infraction.id}
