@@ -48,6 +48,10 @@ ALLOWED_ORIGINS = os.getenv(
 OPTIBUS_API_KEY = os.getenv("OPTIBUS_API_KEY", "").strip()
 API_KEY_ENABLED = len(OPTIBUS_API_KEY) >= 16
 
+# ── B2G Municipal API Key ──
+OPTIBUS_B2G_API_KEY = os.getenv("OPTIBUS_B2G_API_KEY", "").strip()
+B2G_API_KEY_ENABLED = len(OPTIBUS_B2G_API_KEY) >= 16
+
 # ── JWT ──
 JWT_SECRET_ENV = os.getenv("JWT_SECRET", "").strip()
 if JWT_SECRET_ENV and len(JWT_SECRET_ENV) >= 32:

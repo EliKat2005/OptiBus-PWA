@@ -41,6 +41,7 @@ from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.errors import RateLimitExceeded
 from b2b_routes import router as b2b_router
+from b2g_routes import router as b2g_router
 from gps_routes import init_gps_routes
 from gps_routes import router as gps_router
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -293,6 +294,7 @@ app.include_router(gps_router)
 app.include_router(route_router)
 app.include_router(admin_router)
 app.include_router(b2b_router)
+app.include_router(b2g_router)
 
 
 # ── Bloque para métricas/admin Caddy ──
