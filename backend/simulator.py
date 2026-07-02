@@ -1,12 +1,12 @@
 """
-OptiBus Bus Simulator — DevSecOps v5.0
-Simulador de buses multi-ruta para desarrollo/testing.
-Persiste posiciones en PostgreSQL para que /api/bus/active funcione.
+OptiBus Bus Simulator — DevSecOps v5.1
+Simulador de buses multi-ruta con datos realistas para demo/pitch.
 """
 
 import asyncio
 import json
 import logging
+import random
 from datetime import UTC, datetime
 
 import models
@@ -19,9 +19,10 @@ logger = logging.getLogger("optibus-simulator")
 _simulator_task: asyncio.Task | None = None
 _simulator_running = False
 
+BUS_LABELS = ["ECO-001", "ECO-002", "ECO-003", "EXP-101", "EXP-102", "URB-201", "URB-202", "URB-203"]
+
 
 async def bus_simulator(ws_manager: ConnectionManager):
-    """Simulador de buses en segundo plano (multi-ruta) con persistencia en DB."""
     global _simulator_running
     _simulator_running = True
 
@@ -39,40 +40,40 @@ async def bus_simulator(ws_manager: ConnectionManager):
         return
 
     all_buses = []
+    label_idx = 0
     for route_id, geojson_str in routes_data:
         geojson = json.loads(geojson_str)
         coords = geojson.get("coordinates", [])
         if not coords or len(coords) < 2:
             continue
         all_buses.append({
-            "id": f"bus_r{route_id}_1",
+            "id": BUS_LABELS[label_idx % len(BUS_LABELS)],
             "idx": 0,
             "direction": 1,
             "coords": coords,
             "route_id": route_id,
         })
-        if len(coords) > 4:
+        label_idx += 1
+        if len(coords) > 4 and label_idx < len(BUS_LABELS):
             all_buses.append({
-                "id": f"bus_r{route_id}_2",
+                "id": BUS_LABELS[label_idx % len(BUS_LABELS)],
                 "idx": len(coords) // 2,
                 "direction": 1,
                 "coords": coords,
                 "route_id": route_id,
             })
+            label_idx += 1
 
     if not all_buses:
         logger.warning("No hay coordenadas validas para simular.")
         _simulator_running = False
         return
 
-    logger.info(
-        f"Simulador iniciado con {len(all_buses)} buses en {len(routes_data)} rutas."
-    )
+    logger.info(f"Simulador iniciado con {len(all_buses)} buses realistas en {len(routes_data)} rutas.")
 
     iteration = 0
     while _simulator_running:
         iteration += 1
-        # Calcular nuevas posiciones para todos los buses
         buses_payload = []
         for bus in all_buses:
             lon, lat = bus["coords"][bus["idx"]]
@@ -89,7 +90,7 @@ async def bus_simulator(ws_manager: ConnectionManager):
                 bus["idx"] += bus["direction"] * 2
             bus["idx"] = bus["idx"] % len(bus["coords"])
 
-        # Persistir en DB SIEMPRE (independiente de clientes WebSocket)
+        # Persistir en DB con velocidades variables realistas (18-42 km/h para bus urbano)
         try:
             async with SessionLocal() as db:
                 for entry in buses_payload:
@@ -98,7 +99,7 @@ async def bus_simulator(ws_manager: ConnectionManager):
                         cooperative_id=1,
                         bus_id=entry["id"],
                         geom=func.ST_GeomFromText(point, 4326),
-                        speed=25.0,
+                        speed=round(random.uniform(18.0, 42.0), 1),
                         route_id=entry.get("route_id"),
                         recorded_at=datetime.now(UTC),
                     ))
@@ -106,45 +107,36 @@ async def bus_simulator(ws_manager: ConnectionManager):
         except Exception as e:
             logger.debug(f"Simulador DB: {e}")
 
-        # Broadcast WebSocket SOLO si hay clientes conectados (ahorrar ancho de banda)
         if ws_manager.active_count > 0:
             await ws_manager.broadcast(json.dumps({
                 "type": "bus_positions",
                 "buses": buses_payload,
             }))
 
-        # ── Demo: Inyectar infracciones aleatorias para el pitch ──
+        # Demo: infractiones cada 45s
         if iteration % 15 == 0 and all_buses:
-            # Infracción de velocidad para bus_r4_2
-            demo_bus = next((b for b in all_buses if "r4_2" in b["id"]), all_buses[-1])
+            demo_bus = all_buses[iteration % len(all_buses)]
             lon_demo, lat_demo = demo_bus["coords"][demo_bus["idx"]]
             try:
                 async with SessionLocal() as db:
                     db.add(models.Infraction(
-                        cooperative_id=1,
-                        bus_id=demo_bus["id"],
-                        driver_id=1,
-                        infraction_type="speeding",
-                        speed_kmh=72.5,
-                        max_allowed_kmh=60.0,
-                        lat=lat_demo,
-                        lon=lon_demo,
+                        cooperative_id=1, bus_id=demo_bus["id"], driver_id=1,
+                        infraction_type="speeding", speed_kmh=round(random.uniform(65, 78), 1),
+                        max_allowed_kmh=60.0, lat=lat_demo, lon=lon_demo,
                         recorded_at=datetime.now(UTC),
                     ))
                     await db.commit()
             except Exception:
                 pass
 
+        # Geo alerts cada 30s
         if iteration % 10 == 0 and all_buses:
-            # Alerta de geocerca (bus fuera de ruta)
             demo_bus = all_buses[iteration % len(all_buses)]
             try:
                 async with SessionLocal() as db:
                     db.add(models.GeofenceAlert(
-                        cooperative_id=1,
-                        bus_id=demo_bus["id"],
-                        route_id=demo_bus.get("route_id"),
-                        alert_type="off_route",
+                        cooperative_id=1, bus_id=demo_bus["id"],
+                        route_id=demo_bus.get("route_id"), alert_type="off_route",
                         message=f"Bus {demo_bus['id']} se desvio de la ruta asignada",
                     ))
                     await db.commit()

@@ -539,9 +539,28 @@ async def plan_route(
         }
 
     # ── BFS para 1 o 2 transbordos ──
-    bfs_result = _bfs_find_route(
-        from_id, to_id, route_to_stops, stop_to_routes, route_names, stop_names, max_transfers=2
-    )
+    bfs_result = None
+    if stop_to_routes.get(from_id) and stop_to_routes.get(to_id):
+        bfs_result = _bfs_find_route(
+            from_id, to_id, route_to_stops, stop_to_routes, route_names, stop_names, max_transfers=2
+        )
+    # Si una de las paradas no tiene ruta, buscar alternativas automáticamente
+    elif not stop_to_routes.get(from_id) or not stop_to_routes.get(to_id):
+        alternatives = await _find_alternatives(from_id, to_id, db)
+        # Reintentar con la primera alternativa que tenga ruta
+        from_alt = next((a for a in alternatives if a["type"] == "cerca_de_origen" and a["route_name"]), None)
+        to_alt = next((a for a in alternatives if a["type"] == "cerca_de_destino" and a["route_name"]), None)
+        if from_alt:
+            from_id = from_alt["alternative_stop_id"]
+            stop_to_routes[from_id] = stop_to_routes.get(from_id, {})
+        if to_alt:
+            to_id = to_alt["alternative_stop_id"]
+            stop_to_routes[to_id] = stop_to_routes.get(to_id, {})
+        if from_alt or to_alt:
+            bfs_result = _bfs_find_route(
+                from_id, to_id, route_to_stops, stop_to_routes, route_names, stop_names, max_transfers=2
+            )
+
     if bfs_result:
         plan_steps = []
         for step in bfs_result:

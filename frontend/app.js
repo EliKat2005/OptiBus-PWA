@@ -60,18 +60,13 @@ function createStopIcon(stopNumber, routeColor) {
 
 function createBusIcon(bearing) {
     const rotation = bearing || 0;
+    const size = CONFIG.busIconSize + 8;
     return L.divIcon({
         className: 'bus-icon',
-        html: `<div class="bus-marker" style="transform: rotate(${rotation}deg)">
-                 <svg viewBox="0 0 24 24" width="${CONFIG.busIconSize}" height="${CONFIG.busIconSize}">
-                   <circle cx="12" cy="12" r="10" fill="#2563eb" stroke="#fff" stroke-width="2"/>
-                   <path d="M8 12l3-3M8 12l3 3M8 12h8" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/>
-                 </svg>
-                 <div class="bus-id-label"></div>
-               </div>`,
-        iconSize: [CONFIG.busIconSize, CONFIG.busIconSize + 16],
-        iconAnchor: [CONFIG.busIconSize / 2, CONFIG.busIconSize / 2 + 8],
-        popupAnchor: [0, -CONFIG.busIconSize / 2]
+        html: `<div class="bus-marker" style="transform: rotate(${rotation}deg);font-size:${size}px;line-height:1">🚌</div>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+        popupAnchor: [0, -size / 2]
     });
 }
 
