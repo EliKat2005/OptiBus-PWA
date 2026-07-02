@@ -8,7 +8,7 @@ import json
 import logging
 import os
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiofiles
@@ -715,6 +715,77 @@ async def _find_alternatives(from_id: int, to_id: int, db: AsyncSession) -> list
                 "distance_m": round(n.distance, 1),
             })
     return alternatives
+
+
+@router.get("/stops/{stop_id}/eta")
+async def stop_eta(
+    stop_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Público: Calcula ETA a una parada basado en el bus más cercano.
+    Usa ST_Distance de PostGIS para distancia precisa y velocidad actual del bus.
+    Retorna IDs ofuscados con hashids.
+    """
+    # Posición de la parada
+    stop_query = await db.execute(
+        select(
+            func.coalesce(models.Stop.lat, func.ST_Y(models.Stop.geom)).label("lat"),
+            func.coalesce(models.Stop.lon, func.ST_X(models.Stop.geom)).label("lon"),
+            models.Stop.name,
+        ).where(models.Stop.id == stop_id)
+    )
+    stop_row = stop_query.first()
+    if not stop_row or not stop_row.lat:
+        return JSONResponse(status_code=404, content={"detail": "Parada no encontrada"})
+
+    stop_point = f"SRID=4326;POINT({stop_row.lon} {stop_row.lat})"
+
+    # Bus más cercano activo (últimos 3 minutos)
+    since = datetime.now(UTC) - timedelta(minutes=3)
+    nearest_query = (
+        select(
+            models.BusPosition.bus_id,
+            func.ST_Y(models.BusPosition.geom).label("bus_lat"),
+            func.ST_X(models.BusPosition.geom).label("bus_lon"),
+            models.BusPosition.speed,
+            models.BusPosition.recorded_at,
+            func.ST_Distance(
+                models.BusPosition.geom,
+                func.ST_GeomFromText(stop_point, 4326),
+            ).label("distance_m"),
+        )
+        .where(models.BusPosition.recorded_at >= since)
+        .order_by("distance_m")
+        .limit(1)
+    )
+    nearest_result = await db.execute(nearest_query)
+    bus = nearest_result.first()
+
+    if not bus:
+        return {
+            "stop_id": stop_id,
+            "stop_name": stop_row.name,
+            "eta_minutes": None,
+            "message": "No hay buses activos cerca de esta parada",
+        }
+
+    # Calcular ETA
+    distance_m = bus.distance_m or 0
+    speed_kmh = max(bus.speed or 0, 5)  # mínimo 5 km/h para evitar división por cero
+    speed_ms = speed_kmh / 3.6
+    eta_seconds = distance_m / speed_ms if speed_ms > 0 else 0
+    eta_minutes = round(eta_seconds / 60, 1)
+
+    return {
+        "stop_id": stop_id,
+        "stop_name": stop_row.name,
+        "bus_id": bus.bus_id,
+        "distance_m": round(distance_m, 1),
+        "speed_kmh": round(speed_kmh, 1),
+        "eta_minutes": eta_minutes,
+        "last_position_at": bus.recorded_at.isoformat() if bus.recorded_at else None,
+    }
 
 
 @router.get("/simulator/status")

@@ -285,19 +285,43 @@ function showStopMarkersForRoute(routeId, stops, color) {
             icon: createStopIcon(index + 1, color),
             zIndexOffset: 500
         });
-        marker.bindPopup(`
-            <div class="stop-popup">
-                <h3>🚏 ${escapeHtml(stop.name || `Parada ${index + 1}`)}</h3>
-                <div class="popup-info">
-                    <span>📍 ${stop.lat.toFixed(5)}, ${stop.lon.toFixed(5)}</span>
-                </div>
+        const popupContent = document.createElement('div');
+        popupContent.className = 'stop-popup';
+        popupContent.innerHTML = `
+            <h3>🚏 ${escapeHtml(stop.name || `Parada ${index + 1}`)}</h3>
+            <div class="popup-info">
+                <span>📍 ${stop.lat.toFixed(5)}, ${stop.lon.toFixed(5)}</span>
+                <span class="eta-line" style="margin-top:4px;font-size:11px;color:var(--primary)">⏳ Cargando ETA...</span>
             </div>
-        `, { maxWidth: 260, className: 'custom-popup' });
+        `;
+        marker.bindPopup(popupContent, { maxWidth: 260, className: 'custom-popup' });
+        marker.on('popupopen', async () => {
+            const etaEl = popupContent.querySelector('.eta-line');
+            try {
+                const resp = await fetch(`${API_URL}/api/stops/${stop.id}/eta`);
+                if (resp.ok) {
+                    const eta = await resp.json();
+                    if (eta.eta_minutes != null) {
+                        etaEl.textContent = `🚌 Llega en ${eta.eta_minutes} min (${eta.bus_id} a ${eta.speed_kmh} km/h, a ${eta.distance_m}m)`;
+                        etaEl.style.color = eta.eta_minutes <= 3 ? '#dc2626' : 'var(--primary)';
+                    } else {
+                        etaEl.textContent = '🚌 No hay buses cercanos';
+                        etaEl.style.color = 'var(--text-muted)';
+                    }
+                } else {
+                    etaEl.textContent = '🚌 ETA no disponible';
+                    etaEl.style.color = 'var(--text-muted)';
+                }
+            } catch(e) {
+                etaEl.textContent = '🚌 Error al calcular ETA';
+                etaEl.style.color = 'var(--text-muted)';
+            }
+        });
         marker.bindTooltip(`<strong>${escapeHtml(stop.name || `Parada ${index + 1}`)}</strong>`, {
             direction: 'top', offset: [0, -18], className: 'stop-tooltip'
         });
         marker.addTo(map);
-        stopMarkers.push({ marker, routeId, name: stop.name, coords: [stop.lat, stop.lon] });
+        stopMarkers.push({ marker, routeId, name: stop.name, coords: [stop.lat, stop.lon], stopId: stop.id });
     });
 }
 

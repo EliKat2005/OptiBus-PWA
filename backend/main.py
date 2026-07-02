@@ -36,6 +36,10 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.errors import RateLimitExceeded
 from b2b_routes import router as b2b_router
 from gps_routes import init_gps_routes
 from gps_routes import router as gps_router
@@ -108,6 +112,14 @@ app = FastAPI(
     version=APP_VERSION,
     lifespan=lifespan,
 )
+
+# ── Rate Limiting con slowapi ──
+limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
+    status_code=429, content={"detail": f"Rate limit excedido: {exc.detail}"}
+))
 
 # ── Métricas Prometheus ──
 instrumentator = Instrumentator().instrument(app)
