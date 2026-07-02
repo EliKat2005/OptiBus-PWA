@@ -156,8 +156,7 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
     <div id="alert-box">⚠️ <span id="alertMessage"></span></div>
     <script>
-        // DevSecOps: Autenticación via cookie de sesión inyectada por el backend.
-        // La API Key se almacena en sessionStorage (nunca en localStorage ni URL).
+        // DevSecOps: Autenticación via sessionStorage inyectada por el backend.
         const ADMIN_TOKEN = "{admin_token}";
         if (ADMIN_TOKEN) {{
             sessionStorage.setItem("optibus_admin_token", ADMIN_TOKEN);
@@ -174,12 +173,23 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
                     '<span><span class="status-dot ' + (hd.redis==="connected"?"ok":"err") + '"></span>Redis: ' + hd.redis + '</span>' +
                     '<span>v' + hd.version + '</span>';
 
-                const ab=await fetch("/api/bus/active?minutes=5", {{ headers: AUTH_HEADER }});const abd=await ab.json();
-                document.getElementById("activeBuses").textContent=abd.active_count||0;
+                // Dashboard B2B: usa los endpoints protegidos del modulo B2B
+                const dashResp=await fetch("/api/b2b/dashboard", {{ headers: AUTH_HEADER }});
+                if (dashResp.ok) {{
+                    const dash=await dashResp.json();
+                    document.getElementById("activeBuses").textContent=dash.active_buses||0;
+                }}
+
+                const fleetResp=await fetch("/api/b2b/fleet?minutes=5", {{ headers: AUTH_HEADER }});
                 const tb=document.getElementById("busesTable");
-                tb.innerHTML=(abd.buses||[]).map(function(b){{
-                    return '<tr><td>' + b.bus_id + '</td><td>' + b.lat.toFixed(6) + '</td><td>' + b.lon.toFixed(6) + '</td><td>' + b.speed + ' km/h</td><td>' + new Date(b.last_seen).toLocaleTimeString() + '</td></tr>';
-                }}).join("")||'<tr><td colspan="5">No hay buses activos</td></tr>';
+                if (fleetResp.ok) {{
+                    const fleet=await fleetResp.json();
+                    tb.innerHTML=(fleet.fleet||[]).map(function(b){{
+                        return '<tr><td>' + b.bus_id + '</td><td>' + (b.lat ? b.lat.toFixed(6) : '-') + '</td><td>' + (b.lon ? b.lon.toFixed(6) : '-') + '</td><td>' + b.speed_kmh + ' km/h</td><td>' + new Date(b.last_seen).toLocaleTimeString() + '</td></tr>';
+                    }}).join("")||'<tr><td colspan="5">No hay buses activos</td></tr>';
+                }} else {{
+                    tb.innerHTML='<tr><td colspan="5">Error cargando flota B2B</td></tr>';
+                }}
             }}catch(e){{
                 console.error(e);
                 document.getElementById("activeBuses").textContent="Error";
