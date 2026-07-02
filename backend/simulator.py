@@ -70,44 +70,46 @@ async def bus_simulator(ws_manager: ConnectionManager):
     )
 
     while _simulator_running:
-        if ws_manager.active_count > 0:
-            buses_payload = []
-            for bus in all_buses:
-                lon, lat = bus["coords"][bus["idx"]]
-                buses_payload.append({
-                    "id": bus["id"],
-                    "lat": lat,
-                    "lon": lon,
-                    "source": "simulated",
-                    "route_id": bus["route_id"],
-                })
-                bus["idx"] += bus["direction"]
-                if bus["idx"] >= len(bus["coords"]) or bus["idx"] < 0:
-                    bus["direction"] *= -1
-                    bus["idx"] += bus["direction"] * 2
-                bus["idx"] = bus["idx"] % len(bus["coords"])
+        # Calcular nuevas posiciones para todos los buses
+        buses_payload = []
+        for bus in all_buses:
+            lon, lat = bus["coords"][bus["idx"]]
+            buses_payload.append({
+                "id": bus["id"],
+                "lat": lat,
+                "lon": lon,
+                "source": "simulated",
+                "route_id": bus["route_id"],
+            })
+            bus["idx"] += bus["direction"]
+            if bus["idx"] >= len(bus["coords"]) or bus["idx"] < 0:
+                bus["direction"] *= -1
+                bus["idx"] += bus["direction"] * 2
+            bus["idx"] = bus["idx"] % len(bus["coords"])
 
+        # Persistir en DB SIEMPRE (independiente de clientes WebSocket)
+        try:
+            async with SessionLocal() as db:
+                for entry in buses_payload:
+                    point = f"SRID=4326;POINT({entry['lon']} {entry['lat']})"
+                    db.add(models.BusPosition(
+                        cooperative_id=1,
+                        bus_id=entry["id"],
+                        geom=func.ST_GeomFromText(point, 4326),
+                        speed=25.0,
+                        route_id=entry.get("route_id"),
+                        recorded_at=datetime.now(UTC),
+                    ))
+                await db.commit()
+        except Exception as e:
+            logger.debug(f"Simulador DB: {e}")
+
+        # Broadcast WebSocket SOLO si hay clientes conectados (ahorrar ancho de banda)
+        if ws_manager.active_count > 0:
             await ws_manager.broadcast(json.dumps({
                 "type": "bus_positions",
                 "buses": buses_payload,
             }))
-
-            # Persistir en DB usando el ORM correcto de SQLAlchemy
-            try:
-                async with SessionLocal() as db:
-                    for entry in buses_payload:
-                        point = f"SRID=4326;POINT({entry['lon']} {entry['lat']})"
-                        db.add(models.BusPosition(
-                            cooperative_id=1,
-                            bus_id=entry["id"],
-                            geom=func.ST_GeomFromText(point, 4326),
-                            speed=25.0,
-                            route_id=entry.get("route_id"),
-                            recorded_at=datetime.now(UTC),
-                        ))
-                    await db.commit()
-            except Exception as e:
-                logger.debug(f"Simulador DB: {e}")
 
         await asyncio.sleep(3)
 
