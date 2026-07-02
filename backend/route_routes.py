@@ -521,8 +521,6 @@ async def plan_route(
         .join(models.Route, models.Stop.route_id == models.Route.id, isouter=True)
         .order_by(models.Stop.id)
     )
-    # route_to_stops: {route_id: {stop_id: stop_name, ...}}
-    # stop_to_routes: {stop_id: {route_id: route_name, ...}}
     route_to_stops: dict = {}
     stop_to_routes: dict = {}
     route_names: dict = {}
@@ -530,17 +528,63 @@ async def plan_route(
     for r in all_stops_result:
         rid = r.route_id
         sid = r.id
+        stop_names[sid] = r.name
         if rid is None:
-            stop_names[sid] = r.name
-            continue  # Stops sin ruta: solo guardar nombre, no incluir en grafo
+            continue
         if rid not in route_to_stops:
             route_to_stops[rid] = {}
             route_names[rid] = r.route_name
         route_to_stops[rid][sid] = r.name
         if sid not in stop_to_routes:
             stop_to_routes[sid] = {}
-            stop_names[sid] = r.name
         stop_to_routes[sid][rid] = r.route_name
+
+    # ── Asignar paradas sin route_id a la ruta más cercana ──
+    stops_without_route = [sid for sid, name in stop_names.items() if sid not in stop_to_routes]
+    if stops_without_route and from_id not in stop_to_routes:
+        stops_without_route = [from_id] if from_id not in stop_to_routes else []
+    if to_id not in stop_to_routes:
+        if to_id not in stops_without_route:
+            stops_without_route.append(to_id)
+
+    for sid in stops_without_route:
+        stop_coords = await db.execute(
+            select(
+                func.coalesce(models.Stop.lat, func.ST_Y(models.Stop.geom)).label("lat"),
+                func.coalesce(models.Stop.lon, func.ST_X(models.Stop.geom)).label("lon"),
+            ).where(models.Stop.id == sid)
+        )
+        sc = stop_coords.first()
+        if not sc or not sc.lat:
+            continue
+        pt = f"SRID=4326;POINT({sc.lon} {sc.lat})"
+        nearest_route = await db.execute(
+            select(models.Route.id, models.Route.name)
+            .where(
+                func.ST_DWithin(
+                    cast(models.Route.geom, Geography),
+                    cast(func.ST_GeomFromText(pt, 4326), Geography),
+                    500,
+                )
+            )
+            .order_by(
+                func.ST_Distance(
+                    cast(models.Route.geom, Geography),
+                    cast(func.ST_GeomFromText(pt, 4326), Geography),
+                )
+            )
+            .limit(1)
+        )
+        nr = nearest_route.first()
+        if nr:
+            rid, rname = nr.id, nr.name
+            if rid not in route_to_stops:
+                route_to_stops[rid] = {}
+                route_names[rid] = rname
+            route_to_stops[rid][sid] = stop_names.get(sid, str(sid))
+            if sid not in stop_to_routes:
+                stop_to_routes[sid] = {}
+            stop_to_routes[sid][rid] = rname
 
     if not route_to_stops:
         return JSONResponse(
