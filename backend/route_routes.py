@@ -603,8 +603,35 @@ async def plan_route(
             "message": " → ".join(message_parts) + ".",
         }
 
-    # ── Sin ruta: sugerir alternativas ──
+    # ── Sin ruta: intentar TODAS las combinaciones de rutas de las paradas cercanas ──
     alternatives = await _find_alternatives(from_id, to_id, db)
+    # Reintentar con alternativas que tengan ruta
+    for alt_from in alternatives:
+        if alt_from["type"] == "cerca_de_origen" and alt_from.get("alternative_stop_id"):
+            for alt_to in alternatives:
+                if alt_to["type"] == "cerca_de_destino" and alt_to.get("alternative_stop_id"):
+                    retry_result = _find_direct_route(alt_from["alternative_stop_id"], alt_to["alternative_stop_id"], route_to_stops, route_names, stop_names)
+                    if not retry_result and stop_to_routes.get(alt_from["alternative_stop_id"]) and stop_to_routes.get(alt_to["alternative_stop_id"]):
+                        retry_result_list = _bfs_find_route(alt_from["alternative_stop_id"], alt_to["alternative_stop_id"], route_to_stops, stop_to_routes, route_names, stop_names, max_transfers=2)
+                        if retry_result_list:
+                            msg_parts = [f"Toma '{s['route_name']}' en '{s['board_stop']}'" for s in retry_result_list]
+                            return {
+                                "type": "transfer",
+                                "plan": retry_result_list,
+                                "total_transfers": len(retry_result_list) - 1,
+                                "message": " → ".join(msg_parts) + ".",
+                                "note": f"Usando paradas alternativas: '{alt_from['alternative_name']}' y '{alt_to['alternative_name']}'",
+                            }
+                    if retry_result:
+                        return {
+                            "type": "direct",
+                            "plan": [retry_result],
+                            "total_stops": retry_result["stops_count"],
+                            "total_transfers": 0,
+                            "message": f"🚌 Ruta directa: Toma '{retry_result['route_name']}' en '{retry_result['board_stop']}' y bájate en '{retry_result['alight_stop']}' ({retry_result['stops_count']} paradas).",
+                            "note": f"Usando paradas alternativas: '{alt_from['alternative_name']}' y '{alt_to['alternative_name']}'",
+                        }
+
     return JSONResponse(
         status_code=404,
         content={
