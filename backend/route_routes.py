@@ -477,10 +477,31 @@ async def plan_route(
         if to_name and to_id is None:
             to_id = stops_by_name.get(to_name)
 
+    # Fallback: intentar búsqueda parcial si los IDs exactos no se encontraron
+    if from_id is None and from_name:
+        result = await db.execute(
+            select(models.Stop.id).where(
+                models.Stop.name.ilike(f"%{from_name}%")
+            ).limit(1)
+        )
+        row = result.first()
+        if row:
+            from_id = row.id
+
+    if to_id is None and to_name:
+        result = await db.execute(
+            select(models.Stop.id).where(
+                models.Stop.name.ilike(f"%{to_name}%")
+            ).limit(1)
+        )
+        row = result.first()
+        if row:
+            to_id = row.id
+
     if from_id is None or to_id is None:
         return JSONResponse(
             status_code=400,
-            content={"detail": "Selecciona una parada de origen y una de destino de las sugerencias."},
+            content={"detail": f"Parada no encontrada. Verifica las sugerencias al escribir."},
         )
 
     if from_id == to_id:

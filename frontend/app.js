@@ -713,14 +713,13 @@ function renderSuggestions(suggestions, inputEl, suggestionsEl, field) {
         suggestionsEl.classList.remove('show');
         return;
     }
-    // Mismo estilo EXACTO que el buscador principal (search-results-dropdown + search-result-item)
     suggestionsEl.innerHTML = suggestions.map(s => {
-        const sub = s.route_name ? `<span class="chip-dot" style="background:var(--primary)"></span>${escapeHtml(s.route_name)}` : 'Sin ruta asignada';
+        const routeLabel = s.route_name ? `<span class="plan-route-badge">${escapeHtml(s.route_name)}</span>` : '';
         return `<div class="search-result-item" data-stop-id="${s.id}">
             <span class="result-icon">🚏</span>
             <div class="result-info">
-                <span class="result-name">${escapeHtml(s.name)}</span>
-                <span class="result-sub">${sub}</span>
+                <span class="result-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+                ${routeLabel}
             </div>
         </div>`;
     }).join('');
