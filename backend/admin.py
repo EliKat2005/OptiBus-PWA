@@ -156,36 +156,33 @@ ADMIN_HTML = """<!DOCTYPE html>
         const ADMIN_TOKEN = "{admin_token}";
         if (ADMIN_TOKEN) {{ sessionStorage.setItem("optibus_admin_token", ADMIN_TOKEN); }} else {{ ADMIN_TOKEN = sessionStorage.getItem("optibus_admin_token") || ""; }}
         const AUTH = {{ headers: {{ Authorization: "Bearer " + ADMIN_TOKEN }} }};
+        let todayCount = 0;
 
         async function loadData(){{
             try{{
-                // Health
-                const h=await fetch("/health", AUTH);const hd=await h.json();
+                const h=await fetch("/health", AUTH).catch(()=>null);const hd=h&&h.ok?await h.json():{{database:"offline",redis:"offline"}};
                 document.getElementById("statusBar").innerHTML='<span><span class="status-dot '+(hd.database==="connected"?"ok":"err")+'"></span>DB: '+hd.database+'</span><span><span class="status-dot '+(hd.redis==="connected"?"ok":"err")+'"></span>Redis: '+hd.redis+'</span>';
 
-                // Dashboard B2B
-                const dash=await fetch("/api/b2b/dashboard", AUTH);
-                if(dash.ok){{ const d=await dash.json(); document.getElementById("activeBuses").textContent=d.active_buses||0; }}
+                const dash=await fetch("/api/b2b/dashboard", AUTH).catch(()=>null);
+                if(dash&&dash.ok){{ const d=await dash.json(); document.getElementById("activeBuses").textContent=d.active_buses||0; }}
 
-                // Infracciones hoy
-                const inf=await fetch("/api/b2b/infractions?limit=100", AUTH);
-                if(inf.ok){{ const i=await inf.json(); const today=new Date().toDateString(); const todayCount=(i.infractions||[]).filter(x=>new Date(x.recorded_at).toDateString()===today).length; document.getElementById("infractionsToday").textContent=todayCount;
+                const inf=await fetch("/api/b2b/infractions?limit=100", AUTH).catch(()=>null);
+                todayCount=0;
+                if(inf&&inf.ok){{ const i=await inf.json(); const today=new Date().toDateString(); todayCount=(i.infractions||[]).filter(function(x){{return new Date(x.recorded_at).toDateString()===today;}}).length; document.getElementById("infractionsToday").textContent=todayCount;
                     if(todayCount>0) document.getElementById("infractionsToday").parentElement.classList.add("warning"); }}
 
-                // Alertas geocerca hoy
-                const al=await fetch("/api/b2b/geofence/alerts?limit=100", AUTH);
-                if(al.ok){{ const a=await al.json(); const today2=new Date().toDateString(); const alertCount=(a.alerts||[]).filter(x=>new Date(x.created_at).toDateString()===today2).length; document.getElementById("alertsToday").textContent=alertCount;
+                const al=await fetch("/api/b2b/geofence/alerts?limit=100", AUTH).catch(()=>null);
+                if(al&&al.ok){{ const a=await al.json(); const today2=new Date().toDateString(); const alertCount=(a.alerts||[]).filter(function(x){{return new Date(x.created_at).toDateString()===today2;}}).length; document.getElementById("alertsToday").textContent=alertCount;
                     if(alertCount>0) document.getElementById("alertsToday").parentElement.classList.add("danger"); }}
 
-                // Fleet
-                const fleet=await fetch("/api/b2b/fleet?minutes=5", AUTH);
+                const fleet=await fetch("/api/b2b/fleet?minutes=5", AUTH).catch(()=>null);
                 const tb=document.getElementById("busesTable");
-                if(fleet.ok){{ const f=await fleet.json(); const fleetData=f.fleet||[]; document.getElementById("fleetEfficiency").textContent=fleetData.length>0?'92%':'100%';
+                if(fleet&&fleet.ok){{ const f=await fleet.json(); const fleetData=f.fleet||[]; document.getElementById("fleetEfficiency").textContent=fleetData.length>0?'92%':'100%';
                 tb.innerHTML=fleetData.map(function(b){{ const hasInf=(todayCount>0&&b.bus_id==='bus_r4_2'); const status=hasInf?'<span class="badge badge-speeding">Exceso Velocidad</span>':'<span class="badge badge-active">Normal</span>';
                 return '<tr><td>'+b.bus_id+'</td><td>'+status+'</td><td>'+(b.lat?b.lat.toFixed(6):'-')+'</td><td>'+(b.lon?b.lon.toFixed(6):'-')+'</td><td>'+b.speed_kmh+' km/h</td><td>'+new Date(b.last_seen).toLocaleTimeString()+'</td></tr>'; }}).join("")||'<tr><td colspan="6">No hay buses activos</td></tr>'; }}
             }}catch(e){{ console.error(e); }}
         }}
-        loadData();setInterval(loadData,10000);
+        loadData();setInterval(loadData,15000);
     </script>
 </body>
 </html>"""

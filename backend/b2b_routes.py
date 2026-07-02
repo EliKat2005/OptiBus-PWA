@@ -145,7 +145,7 @@ async def geofence_alerts(
     """Historial de alertas de geocerca."""
     coop_id = await _get_cooperative(request, _auth, db)
 
-    result = await db.execute(
+    result = await db.scalars(
         select(models.GeofenceAlert)
         .where(models.GeofenceAlert.cooperative_id == coop_id)
         .order_by(desc(models.GeofenceAlert.created_at))
@@ -175,7 +175,7 @@ async def infractions_list(
     """Reporte de infracciones: excesos de velocidad, desvios."""
     coop_id = await _get_cooperative(request, _auth, db)
 
-    result = await db.execute(
+    result = await db.scalars(
         select(models.Infraction)
         .where(models.Infraction.cooperative_id == coop_id)
         .order_by(desc(models.Infraction.recorded_at))
