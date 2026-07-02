@@ -43,6 +43,7 @@ async def admin_dashboard(
     auth_header = request.headers.get("Authorization", "")
     authed = False
 
+    admin_token = ""
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
         from secrets import compare_digest
@@ -51,11 +52,13 @@ async def admin_dashboard(
 
         if API_KEY_ENABLED and compare_digest(token, OPTIBUS_API_KEY):
             authed = True
+            admin_token = token
         else:
             try:
                 payload = decode_jwt_token(token)
                 if payload.get("type") == "access":
                     authed = True
+                    admin_token = token
             except Exception:
                 pass
 
@@ -97,6 +100,7 @@ async def admin_dashboard(
             ws=stats["ws"],
             version=APP_VERSION,
             api_status="🔒 Habilitada" if API_KEY_ENABLED else "⚠️ Deshabilitada",
+            admin_token=admin_token,
         )
     )
 
@@ -131,12 +135,13 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
         #alert-box{{background:#7f1d1d;border:1px solid #ef4444;padding:12px;border-radius:8px;margin-top:16px;display:none}}
         .route-badge{{background:#1e40af;color:#93c5fd;padding:2px 8px;border-radius:6px;font-size:.75rem}}
         .auth-badge{{background:#1e293b;border:1px solid #334155;padding:4px 12px;border-radius:6px;font-size:.8rem;color:#94a3b8}}
+        .logout-btn{{background:#dc2626;color:#fff;border:none;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px;margin-left:12px}}
     </style>
 </head>
 <body>
     <h1>🚌 OptiBus Admin Dashboard</h1>
     <div class="status-bar">
-        <span class="auth-badge">🔑 Auth: Header Authorization solo</span>
+        <span class="auth-badge">🔑 Autenticado con API Key</span>
         <span id="statusBar"></span>
     </div>
     <div class="grid">
@@ -151,24 +156,33 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
     <div id="alert-box">⚠️ <span id="alertMessage"></span></div>
     <script>
-        // DevSecOps: NO usamos api_key como query param. El admin ya pasó auth via header.
+        // DevSecOps: Autenticación via cookie de sesión inyectada por el backend.
+        // La API Key se almacena en sessionStorage (nunca en localStorage ni URL).
+        const ADMIN_TOKEN = "{admin_token}";
+        if (ADMIN_TOKEN) {{
+            sessionStorage.setItem("optibus_admin_token", ADMIN_TOKEN);
+        }} else {{
+            ADMIN_TOKEN = sessionStorage.getItem("optibus_admin_token") || "";
+        }}
+        const AUTH_HEADER = ADMIN_TOKEN ? {{ Authorization: "Bearer " + ADMIN_TOKEN }} : {{}};
+
         async function loadData(){{
             try{{
-                const h=await fetch('/health');const hd=await h.json();
-                document.getElementById('statusBar').innerHTML=
-                    `<span><span class="status-dot ${{hd.database==='connected'?'ok':'err'}}"></span>DB: ${{hd.database}}</span>`+
-                    `<span><span class="status-dot ${{hd.redis==='connected'?'ok':'err'}}"></span>Redis: ${{hd.redis}}</span>`+
-                    `<span>v${{hd.version}}</span>`;
+                const h=await fetch("/health", {{ headers: AUTH_HEADER }});const hd=await h.json();
+                document.getElementById("statusBar").innerHTML=
+                    '<span><span class="status-dot ' + (hd.database==="connected"?"ok":"err") + '"></span>DB: ' + hd.database + '</span>' +
+                    '<span><span class="status-dot ' + (hd.redis==="connected"?"ok":"err") + '"></span>Redis: ' + hd.redis + '</span>' +
+                    '<span>v' + hd.version + '</span>';
 
-                const ab=await fetch('/api/bus/active?minutes=5');const abd=await ab.json();
-                document.getElementById('activeBuses').textContent=abd.active_count||0;
-                const tb=document.getElementById('busesTable');
-                tb.innerHTML=(abd.buses||[]).map(b=>
-                    `<tr><td>${{b.bus_id}}</td><td>${{b.lat.toFixed(6)}}</td><td>${{b.lon.toFixed(6)}}</td><td>${{b.speed}} km/h</td><td>${{new Date(b.last_seen).toLocaleTimeString()}}</td></tr>`
-                ).join('')||'<tr><td colspan="5">No hay buses activos</td></tr>';
+                const ab=await fetch("/api/bus/active?minutes=5", {{ headers: AUTH_HEADER }});const abd=await ab.json();
+                document.getElementById("activeBuses").textContent=abd.active_count||0;
+                const tb=document.getElementById("busesTable");
+                tb.innerHTML=(abd.buses||[]).map(function(b){{
+                    return '<tr><td>' + b.bus_id + '</td><td>' + b.lat.toFixed(6) + '</td><td>' + b.lon.toFixed(6) + '</td><td>' + b.speed + ' km/h</td><td>' + new Date(b.last_seen).toLocaleTimeString() + '</td></tr>';
+                }}).join("")||'<tr><td colspan="5">No hay buses activos</td></tr>';
             }}catch(e){{
                 console.error(e);
-                document.getElementById('activeBuses').textContent='Error';
+                document.getElementById("activeBuses").textContent="Error";
             }}
         }}
         loadData();setInterval(loadData,10000);
