@@ -717,23 +717,35 @@ async def _find_alternatives(from_id: int, to_id: int, db: AsyncSession) -> list
     return alternatives
 
 
+from utils.obfuscation import decode_id
+
 @router.get("/stops/{stop_id}/eta")
 async def stop_eta(
-    stop_id: int,
+    stop_id: str,
     db: AsyncSession = Depends(get_db),
 ):
     """
     Público: Calcula ETA a una parada basado en el bus más cercano.
+    stop_id ofuscado (hashid) → se decodifica internamente.
     Usa ST_Distance de PostGIS para distancia precisa y velocidad actual del bus.
-    Retorna IDs ofuscados con hashids.
     """
+    # Decodificar ID (acepta tanto hashid como entero para retrocompatibilidad)
+    try:
+        real_stop_id = decode_id(stop_id)
+    except (ValueError, TypeError):
+        # Si no es un hashid válido, intentar como entero directo
+        try:
+            real_stop_id = int(stop_id)
+        except (ValueError, TypeError):
+            return JSONResponse(status_code=400, content={"detail": "ID de parada inválido"})
+
     # Posición de la parada
     stop_query = await db.execute(
         select(
             func.coalesce(models.Stop.lat, func.ST_Y(models.Stop.geom)).label("lat"),
             func.coalesce(models.Stop.lon, func.ST_X(models.Stop.geom)).label("lon"),
             models.Stop.name,
-        ).where(models.Stop.id == stop_id)
+        ).where(models.Stop.id == real_stop_id)
     )
     stop_row = stop_query.first()
     if not stop_row or not stop_row.lat:
@@ -772,7 +784,7 @@ async def stop_eta(
 
     # Calcular ETA
     distance_m = bus.distance_m or 0
-    speed_kmh = max(bus.speed or 0, 5)  # mínimo 5 km/h para evitar división por cero
+    speed_kmh = max(bus.speed or 20, 20)  # velocidad promedio urbana realista (20 km/h) como fallback
     speed_ms = speed_kmh / 3.6
     eta_seconds = distance_m / speed_ms if speed_ms > 0 else 0
     eta_minutes = round(eta_seconds / 60, 1)
